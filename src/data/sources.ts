@@ -1,0 +1,166 @@
+import type { SourceReference } from "@/lib/domain";
+
+export const sourceRecords: SourceReference[] = [
+  {
+    id: "source_us_state",
+    title: "U.S. Department of State: Medicine and health",
+    url: "https://travel.state.gov/content/travel/en/international-travel/before-you-go/your-health-abroad.html",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_us_tsa",
+    title: "TSA: Disabilities and medical conditions",
+    url: "https://www.tsa.gov/travel/tsa-cares/disabilities-and-medical-conditions",
+    sourceType: "aviation_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_gb",
+    title: "GOV.UK: Take medicine in or out of the UK",
+    url: "https://www.gov.uk/travelling-controlled-drugs",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_ae",
+    title: "UAE Government: Bringing medicine into the UAE",
+    url: "https://u.ae/en/information-and-services/health-and-fitness/drugs-and-controlled-medicines",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_fr",
+    title: "France Diplomacy: Health advice for travelers",
+    url: "https://www.diplomatie.gouv.fr/en/coming-to-france/",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_de",
+    title: "German Federal Foreign Office: Travel and health",
+    url: "https://www.auswaertiges-amt.de/en/visa-service/buergerservice/faq/06-medikamente-606668",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_nl",
+    title: "Government of the Netherlands: Medicines when travelling",
+    url: "https://www.netherlandsworldwide.nl/travel-abroad/medicines",
+    sourceType: "government",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_jp",
+    title: "Japan Ministry of Health: Importing medicines",
+    url: "https://www.mhlw.go.jp/english/policy/health-medical/pharmaceuticals/01.html",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_sg",
+    title: "Singapore HSA: Bringing personal medications",
+    url: "https://www.hsa.gov.sg/personal-medication",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_in",
+    title: "India CDSCO: Traveler guidance",
+    url: "https://cdsco.gov.in/opencms/opencms/en/Home/",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_au",
+    title: "Australian TGA: Entering Australia with medicines",
+    url: "https://www.tga.gov.au/products/travelling-medicines-and-medical-devices/entering-australia",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_ca",
+    title: "Health Canada: Travelling with medication",
+    url: "https://travel.gc.ca/travelling/health-safety/medication",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_mx",
+    title: "Government of Mexico: Health information",
+    url: "https://www.gob.mx/salud",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_qa",
+    title: "Qatar Ministry of Public Health",
+    url: "https://www.moph.gov.qa/english/Pages/default.aspx",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_br",
+    title: "Brazil ANVISA: Traveler health",
+    url: "https://www.gov.br/anvisa/en/subjects/travellers",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_za",
+    title: "South African Health Products Regulatory Authority",
+    url: "https://www.sahpra.org.za/",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_kr",
+    title: "Korea Ministry of Food and Drug Safety",
+    url: "https://www.mfds.go.kr/eng/index.do",
+    sourceType: "health_authority",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_lhr",
+    title: "Heathrow: Security and baggage",
+    url: "https://www.heathrow.com/at-the-airport/security-and-baggage",
+    sourceType: "airport",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+  {
+    id: "source_dxb",
+    title: "Dubai Airports: Baggage rules",
+    url: "https://www.dubaiairports.ae/before-you-fly/baggage",
+    sourceType: "airport",
+    qualityTier: 1,
+    lastVerifiedAt: "2026-06-15",
+  },
+];
+
+export function getSources(ids: string[]) {
+  return ids.flatMap(
+    (id) => sourceRecords.find((source) => source.id === id) ?? [],
+  );
+}
+
+export function hasCompleteSourceEvidence(ids: string[]) {
+  return ids.length > 0 && getSources(ids).length === ids.length;
+}
