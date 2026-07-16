@@ -1,171 +1,58 @@
-export type Airport = {
-  id: string;
-  code: string;
-  name: string;
-  city: string;
-  country: string;
-  countryCode: string;
-};
+import { airports } from "@/data/airports";
+import type { Airport } from "@/lib/domain";
 
-export const airports: Airport[] = [
-  {
-    id: "jfk",
-    code: "JFK",
-    name: "John F. Kennedy International Airport",
-    city: "New York",
-    country: "United States",
-    countryCode: "US",
-  },
-  {
-    id: "lga",
-    code: "LGA",
-    name: "LaGuardia Airport",
-    city: "New York",
-    country: "United States",
-    countryCode: "US",
-  },
-  {
-    id: "lax",
-    code: "LAX",
-    name: "Los Angeles International Airport",
-    city: "Los Angeles",
-    country: "United States",
-    countryCode: "US",
-  },
-  {
-    id: "sfo",
-    code: "SFO",
-    name: "San Francisco International Airport",
-    city: "San Francisco",
-    country: "United States",
-    countryCode: "US",
-  },
-  {
-    id: "ord",
-    code: "ORD",
-    name: "O'Hare International Airport",
-    city: "Chicago",
-    country: "United States",
-    countryCode: "US",
-  },
-  {
-    id: "lhr",
-    code: "LHR",
-    name: "Heathrow Airport",
-    city: "London",
-    country: "United Kingdom",
-    countryCode: "GB",
-  },
-  {
-    id: "lgw",
-    code: "LGW",
-    name: "Gatwick Airport",
-    city: "London",
-    country: "United Kingdom",
-    countryCode: "GB",
-  },
-  {
-    id: "cdg",
-    code: "CDG",
-    name: "Charles de Gaulle Airport",
-    city: "Paris",
-    country: "France",
-    countryCode: "FR",
-  },
-  {
-    id: "ory",
-    code: "ORY",
-    name: "Paris Orly Airport",
-    city: "Paris",
-    country: "France",
-    countryCode: "FR",
-  },
-  {
-    id: "fco",
-    code: "FCO",
-    name: "Leonardo da Vinci–Fiumicino Airport",
-    city: "Rome",
-    country: "Italy",
-    countryCode: "IT",
-  },
-  {
-    id: "dxb",
-    code: "DXB",
-    name: "Dubai International Airport",
-    city: "Dubai",
-    country: "United Arab Emirates",
-    countryCode: "AE",
-  },
-  {
-    id: "nrt",
-    code: "NRT",
-    name: "Narita International Airport",
-    city: "Tokyo",
-    country: "Japan",
-    countryCode: "JP",
-  },
-  {
-    id: "hnd",
-    code: "HND",
-    name: "Haneda Airport",
-    city: "Tokyo",
-    country: "Japan",
-    countryCode: "JP",
-  },
-  {
-    id: "yyz",
-    code: "YYZ",
-    name: "Toronto Pearson International Airport",
-    city: "Toronto",
-    country: "Canada",
-    countryCode: "CA",
-  },
-];
+function normalize(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase()
+    .trim();
+}
 
-export function searchAirports(query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
+function scoreAirport(airport: Airport, rawQuery: string) {
+  const query = normalize(rawQuery);
+  const iata = normalize(airport.iataCode);
+  const name = normalize(airport.name);
+  const city = normalize(airport.city);
+  const country = normalize(airport.countryName);
+  const searchable = `${iata} ${name} ${city} ${country}`;
 
-  if (!normalizedQuery) {
-    return [];
-  }
+  if (iata === query) return 1000;
+  if (iata.startsWith(query)) return 900;
+  if (city === query) return 800;
+  if (name === query) return 750;
+  if (country === query) return 700;
+  if (city.startsWith(query)) return 650;
+  if (name.startsWith(query)) return 600;
 
+  const tokens = query.split(/\s+/);
+  if (!tokens.every((token) => searchable.includes(token))) return 0;
+
+  return (
+    300 +
+    tokens.reduce((score, token) => {
+      if (city.includes(token)) return score + 30;
+      if (name.includes(token)) return score + 20;
+      if (country.includes(token)) return score + 10;
+      return score;
+    }, 0)
+  );
+}
+
+export function searchAirports(query: string, limit = 8) {
   return airports
-    .map((airport) => {
-      const code = airport.code.toLowerCase();
-      const searchable = [
-        airport.name,
-        airport.city,
-        airport.country,
-        airport.code,
-      ].map((value) => value.toLowerCase());
-      const exactCode = code === normalizedQuery;
-      const startsWithCode = code.startsWith(normalizedQuery);
-      const startsWithValue = searchable.some((value) =>
-        value.startsWith(normalizedQuery),
-      );
-      const includesValue = searchable.some((value) =>
-        value.includes(normalizedQuery),
-      );
-
-      return {
-        airport,
-        score: exactCode
-          ? 4
-          : startsWithCode
-            ? 3
-            : startsWithValue
-              ? 2
-              : includesValue
-                ? 1
-                : 0,
-      };
-    })
+    .map((airport) => ({ airport, score: scoreAirport(airport, query) }))
     .filter(({ score }) => score > 0)
     .sort(
       (left, right) =>
         right.score - left.score ||
-        left.airport.code.localeCompare(right.airport.code),
+        left.airport.city.localeCompare(right.airport.city) ||
+        left.airport.iataCode.localeCompare(right.airport.iataCode),
     )
-    .slice(0, 6)
+    .slice(0, limit)
     .map(({ airport }) => airport);
+}
+
+export function findAirportById(id: string) {
+  return airports.find((airport) => airport.id === id);
 }
