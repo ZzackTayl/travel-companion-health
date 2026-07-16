@@ -45,10 +45,6 @@ const riskLabels: Record<RiskLabel, string> = {
   unknown: "Not yet verified",
 };
 
-function uniqueCategories(medicines: LocalMedicine[]) {
-  return [...new Set(medicines.flatMap(({ categories }) => categories))];
-}
-
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = await response.json();
   if (!response.ok) {
@@ -91,15 +87,15 @@ export function TripPlanner() {
   }, []);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+    const search = query.trim();
+    if (!search) return;
 
     const controller = new AbortController();
     const timeout = window.setTimeout(async () => {
       setIsSearching(true);
       try {
         const response = await fetch(
-          `/api/airports/search?q=${encodeURIComponent(trimmed)}&limit=8`,
+          `/api/airports/search?q=${encodeURIComponent(search)}&limit=8`,
           { signal: controller.signal },
         );
         const body = await parseResponse<{ results: Airport[] }>(response);
@@ -151,38 +147,31 @@ export function TripPlanner() {
     return () => controller.abort();
   }, [routeStops]);
 
-  function addAirport(airport: Airport) {
-    setRouteStops((current) => [...current, airport]);
-    setResolvedRoute(null);
+  function invalidateEvaluation() {
     setEvaluation(null);
     setSavedMessage("");
-    setIsResolving(routeStops.length + 1 >= 2);
+  }
+
+  function replaceRoute(next: Airport[]) {
+    setRouteStops(next);
+    setResolvedRoute(null);
+    invalidateEvaluation();
+    setIsResolving(next.length >= 2);
+  }
+
+  function addAirport(airport: Airport) {
+    replaceRoute([...routeStops, airport]);
     setQuery("");
     setSearchResults([]);
     setError("");
   }
 
   function moveStop(index: number, direction: -1 | 1) {
-    setRouteStops((current) => {
-      const target = index + direction;
-      if (target < 0 || target >= current.length) return current;
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-    setResolvedRoute(null);
-    setEvaluation(null);
-    setSavedMessage("");
-    setIsResolving(routeStops.length >= 2);
-  }
-
-  function removeStop(index: number) {
-    const next = routeStops.filter((_, item) => item !== index);
-    setRouteStops(next);
-    setResolvedRoute(null);
-    setEvaluation(null);
-    setSavedMessage("");
-    setIsResolving(next.length >= 2);
+    const target = index + direction;
+    if (target < 0 || target >= routeStops.length) return;
+    const next = [...routeStops];
+    [next[index], next[target]] = [next[target], next[index]];
+    replaceRoute(next);
   }
 
   function toggleCategory(category: MedicationCategory) {
@@ -192,14 +181,12 @@ export function TripPlanner() {
         ? current.categories.filter((item) => item !== category)
         : [...current.categories, category],
     }));
-    setEvaluation(null);
-    setSavedMessage("");
+    invalidateEvaluation();
   }
 
   async function evaluate(event: FormEvent) {
     event.preventDefault();
     setError("");
-    setSavedMessage("");
     if (routeStops.length < 2) {
       setError("Add at least an origin and destination.");
       return;
@@ -207,6 +194,9 @@ export function TripPlanner() {
 
     setIsEvaluating(true);
     try {
+      const categories = [
+        ...new Set(medicines.flatMap(({ categories: values }) => values)),
+      ];
       const response = await fetch("/api/guidance/evaluate", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -214,7 +204,7 @@ export function TripPlanner() {
           routeStopIds: routeStops.map(({ id }) => id),
           ...(departureDate ? { departureDate } : {}),
           ...(returnDate ? { returnDate } : {}),
-          medicationCategories: uniqueCategories(medicines),
+          medicationCategories: categories,
         }),
       });
       setEvaluation(await parseResponse<GuidanceEvaluation>(response));
@@ -231,7 +221,7 @@ export function TripPlanner() {
 
   async function saveCurrentTrip() {
     if (!evaluation) return;
-    const saved = await saveTrip({
+    await saveTrip({
       routeStops,
       ...(departureDate ? { departureDate } : {}),
       ...(returnDate ? { returnDate } : {}),
@@ -239,9 +229,7 @@ export function TripPlanner() {
       evaluatedGuidanceSnapshot: evaluation,
     });
     setSavedTrips(await listSavedTrips());
-    setSavedMessage(
-      `Saved this trip on this device as ${saved.id.slice(0, 8)}.`,
-    );
+    setSavedMessage("Saved this guidance on this device.");
   }
 
   function restoreTrip(saved: SavedTrip) {
@@ -254,7 +242,6 @@ export function TripPlanner() {
     );
     setEvaluation(saved.evaluatedGuidanceSnapshot);
     setSavedMessage("Loaded the saved guidance snapshot.");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function removeSavedTrip(id: string) {
@@ -298,7 +285,7 @@ export function TripPlanner() {
               }
             }}
             autoComplete="off"
-            className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-300"
+            className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950 px-4 py-3 outline-none focus:border-cyan-300"
             placeholder="Try JFK, London, or Japan"
             aria-describedby="airport-search-status"
           />
@@ -309,9 +296,7 @@ export function TripPlanner() {
           >
             {isSearching
               ? "Searching airports…"
-              : query && searchResults.length === 0
-                ? "No matching airports yet."
-                : `${searchResults.length} airport${searchResults.length === 1 ? "" : "s"} found`}
+              : `${searchResults.length} airport${searchResults.length === 1 ? "" : "s"} found`}
           </p>
           {searchResults.length > 0 ? (
             <ul className="mt-3 space-y-2" aria-label="Airport search results">
@@ -320,7 +305,7 @@ export function TripPlanner() {
                   <button
                     type="button"
                     onClick={() => addAirport(airport)}
-                    className="flex min-h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-left hover:border-cyan-400/50"
+                    className="flex min-h-11 w-full justify-between rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-left hover:border-cyan-400/50"
                   >
                     <span>
                       <strong>{airport.iataCode}</strong> · {airport.name}
@@ -367,8 +352,10 @@ export function TripPlanner() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => removeStop(index)}
-                  className="min-h-11 rounded-lg border border-rose-300/20 px-3 text-sm text-rose-200"
+                  onClick={() =>
+                    replaceRoute(routeStops.filter((_, item) => item !== index))
+                  }
+                  className="min-h-11 px-2 text-sm text-rose-200"
                   aria-label={`Remove ${airport.iataCode}`}
                 >
                   Remove
@@ -376,7 +363,6 @@ export function TripPlanner() {
               </li>
             ))}
           </ol>
-
           {resolvedRoute ? (
             <div className="mt-4 rounded-xl bg-slate-950/70 p-4 text-sm">
               <p className="font-medium">Jurisdictions found</p>
@@ -405,8 +391,7 @@ export function TripPlanner() {
                 value={departureDate}
                 onChange={(event) => {
                   setDepartureDate(event.target.value);
-                  setEvaluation(null);
-                  setSavedMessage("");
+                  invalidateEvaluation();
                 }}
                 className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950 px-3"
               />
@@ -419,8 +404,7 @@ export function TripPlanner() {
                 min={departureDate || undefined}
                 onChange={(event) => {
                   setReturnDate(event.target.value);
-                  setEvaluation(null);
-                  setSavedMessage("");
+                  invalidateEvaluation();
                 }}
                 className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-slate-950 px-3"
               />
@@ -491,18 +475,17 @@ export function TripPlanner() {
             {error}
           </div>
         ) : null}
-
         <button
           type="submit"
           disabled={isEvaluating || isResolving}
-          className="min-h-12 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          className="min-h-12 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 disabled:opacity-60"
         >
           {isEvaluating ? "Checking route…" : "Get route guidance"}
         </button>
       </form>
 
       <div className="space-y-6">
-        <section className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 lg:sticky lg:top-6">
+        <section className="rounded-3xl border border-white/10 bg-slate-900/80 p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
             Server-backed result
           </p>
@@ -512,9 +495,8 @@ export function TripPlanner() {
                 Your route guidance will appear here
               </p>
               <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-400">
-                Add at least two airports. The server will resolve every
-                jurisdiction and match reviewed guidance without receiving
-                medicine names.
+                Add at least two airports. The server resolves every
+                jurisdiction without receiving medicine names.
               </p>
             </div>
           ) : (
@@ -528,37 +510,29 @@ export function TripPlanner() {
                   {evaluation.route.stops
                     .map(({ iataCode }) => iataCode)
                     .join(" → ")}
-                  {evaluation.durationDays
-                    ? ` · ${evaluation.durationDays} days`
-                    : " · Dates not supplied"}
                 </p>
               </div>
-
               {evaluation.jurisdictions.map((jurisdiction) => (
                 <article
                   key={jurisdiction.jurisdictionId}
                   className="rounded-2xl border border-white/10 bg-white/5 p-5"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold">
                         {jurisdiction.name}
                       </h3>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">
+                      <p className="text-xs uppercase text-slate-400">
                         {jurisdiction.roles.join(" · ")}
-                        {jurisdiction.transitOnly ? " · transit only" : ""}
                       </p>
                     </div>
-                    <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+                    <span className="text-sm text-amber-100">
                       {riskLabels[jurisdiction.riskLabel]}
                     </span>
                   </div>
-                  <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-200">
+                  <ul className="mt-4 space-y-2 text-sm text-slate-200">
                     {jurisdiction.actions.map((action) => (
-                      <li key={action} className="flex gap-2">
-                        <span aria-hidden="true">✓</span>
-                        <span>{action}</span>
-                      </li>
+                      <li key={action}>✓ {action}</li>
                     ))}
                   </ul>
                   <p className="mt-4 text-xs text-slate-400">
@@ -569,8 +543,8 @@ export function TripPlanner() {
                   </p>
                   {jurisdiction.sources.length > 0 ? (
                     <details className="mt-3">
-                      <summary className="cursor-pointer text-sm font-medium text-cyan-200">
-                        Official sources ({jurisdiction.sources.length})
+                      <summary className="cursor-pointer text-sm text-cyan-200">
+                        Official sources
                       </summary>
                       <ul className="mt-2 space-y-2 text-sm">
                         {jurisdiction.sources.map((source) => (
@@ -579,13 +553,10 @@ export function TripPlanner() {
                               href={source.url}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-cyan-300 underline underline-offset-4"
+                              className="text-cyan-300 underline"
                             >
                               {source.title}
                             </a>
-                            <span className="ml-2 text-xs text-slate-500">
-                              Tier {source.qualityTier}
-                            </span>
                           </li>
                         ))}
                       </ul>
@@ -593,16 +564,14 @@ export function TripPlanner() {
                   ) : null}
                 </article>
               ))}
-
-              <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50">
-                This is preparation guidance, not legal or medical advice.
-                Requirements change; verify high-risk items with the linked
-                authority before travel.
+              <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm">
+                Preparation guidance only. Verify current requirements with the
+                linked authority before travel.
               </div>
               <button
                 type="button"
                 onClick={saveCurrentTrip}
-                className="min-h-11 w-full rounded-full border border-cyan-300/40 px-5 py-3 font-medium text-cyan-100"
+                className="min-h-11 w-full rounded-full border border-cyan-300/40 px-5 py-3"
               >
                 Save guidance on this device
               </button>
@@ -617,19 +586,12 @@ export function TripPlanner() {
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-                Local saves
-              </p>
-              <h2 className="mt-2 text-xl font-semibold">
-                Saved on this device
-              </h2>
-            </div>
+            <h2 className="text-xl font-semibold">Saved on this device</h2>
             {savedTrips.length > 0 ? (
               <button
                 type="button"
                 onClick={removeAllSavedTrips}
-                className="min-h-11 text-sm text-rose-200 underline underline-offset-4"
+                className="min-h-11 text-sm text-rose-200 underline"
               >
                 Clear all
               </button>
@@ -644,29 +606,21 @@ export function TripPlanner() {
               {savedTrips.map((saved) => (
                 <li
                   key={saved.id}
-                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-900/70 p-3"
+                  className="flex items-center gap-3 rounded-xl border border-white/10 p-3"
                 >
                   <button
                     type="button"
                     onClick={() => restoreTrip(saved)}
                     className="min-h-11 min-w-0 flex-1 text-left"
                   >
-                    <strong>
-                      {saved.routeStops
-                        .map(({ iataCode }) => iataCode)
-                        .join(" → ")}
-                    </strong>
-                    <span className="block text-xs text-slate-400">
-                      Updated {new Date(saved.updatedAt).toLocaleDateString()}
-                    </span>
+                    {saved.routeStops
+                      .map(({ iataCode }) => iataCode)
+                      .join(" → ")}
                   </button>
                   <button
                     type="button"
                     onClick={() => removeSavedTrip(saved.id)}
-                    className="min-h-11 px-2 text-sm text-rose-200"
-                    aria-label={`Delete saved route ${saved.routeStops
-                      .map(({ iataCode }) => iataCode)
-                      .join(" to ")}`}
+                    className="min-h-11 text-sm text-rose-200"
                   >
                     Delete
                   </button>

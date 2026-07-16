@@ -86,8 +86,9 @@ function evaluateJurisdiction(
       "The medicine category is uncertain; verify it against current official requirements.",
     );
   }
-  if (durationWarning && jurisdiction.type === "country")
+  if (durationWarning && jurisdiction.type === "country") {
     actions.push(durationWarning);
+  }
 
   return {
     jurisdictionId: jurisdiction.id,
