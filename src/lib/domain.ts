@@ -18,6 +18,39 @@ export const medicationCategories = [
 
 export type MedicationCategory = (typeof medicationCategories)[number];
 
+export const medicationCategoryLabels: Record<MedicationCategory, string> = {
+  prescription: "Prescription medicine",
+  over_the_counter: "Over-the-counter medicine",
+  controlled_substance: "Controlled substance",
+  opioid: "Opioid",
+  stimulant_adhd: "ADHD stimulant",
+  sedative_anxiety: "Sedative or anxiety medicine",
+  sleep_medication: "Sleep medicine",
+  pseudoephedrine: "Pseudoephedrine",
+  cannabis_derived: "Cannabis-derived product",
+  injectable: "Injectable",
+  liquid_over_100ml: "Liquid over 100 mL",
+  refrigerated: "Refrigerated medicine",
+  medical_device: "Medical device",
+  needles_or_sharps: "Needles or sharps",
+  unknown: "Not sure",
+};
+
+export const guidanceTypes = [
+  "general",
+  "packaging",
+  "documentation",
+  "quantity_limit",
+  "prohibited",
+  "restricted",
+  "screening",
+  "declaration",
+  "transit",
+  "airline_carriage",
+] as const;
+
+export type GuidanceType = (typeof guidanceTypes)[number];
+
 export const riskLabels = [
   "likely_ok",
   "check_documentation",
@@ -87,10 +120,21 @@ export interface JurisdictionGuidance {
   roles: RouteRole[];
   transitOnly: boolean;
   riskLabel: RiskLabel;
+  confidence: Confidence;
+  generalGuidance: GuidanceItem[];
+  categoryGuidance: GuidanceItem[];
+}
+
+export interface GuidanceItem {
+  medicationCategory: MedicationCategory | null;
+  guidanceType: GuidanceType;
+  routeRole: RouteRole;
+  riskLabel: RiskLabel;
   actions: string[];
   confidence: Confidence;
   lastReviewedAt: string;
   sources: SourceReference[];
+  isFallback: boolean;
 }
 
 export interface GuidanceEvaluation {

@@ -36,11 +36,59 @@ const route: ResolvedRoute = {
 };
 
 const evaluation: GuidanceEvaluation = {
-  overallRisk: "check_documentation",
+  overallRisk: "unknown",
   durationDays: null,
   durationWarning: null,
   route,
-  jurisdictions: [],
+  jurisdictions: [
+    {
+      jurisdictionId: "country_gb",
+      name: "United Kingdom",
+      countryCode: "GB",
+      airportCodes: ["LHR"],
+      roles: ["destination"],
+      transitOnly: false,
+      riskLabel: "unknown",
+      confidence: "unknown",
+      generalGuidance: [
+        {
+          medicationCategory: null,
+          guidanceType: "general",
+          routeRole: "destination",
+          riskLabel: "check_documentation",
+          actions: ["Keep medicines in original labeled packaging."],
+          confidence: "official_verified",
+          lastReviewedAt: "2026-06-15",
+          sources: [
+            {
+              id: "source_gb",
+              title: "Official United Kingdom guidance",
+              url: "https://www.gov.uk/",
+              sourceType: "government",
+              qualityTier: 1,
+              lastVerifiedAt: "2026-06-15",
+            },
+          ],
+          isFallback: false,
+        },
+      ],
+      categoryGuidance: [
+        {
+          medicationCategory: "controlled_substance",
+          guidanceType: "restricted",
+          routeRole: "destination",
+          riskLabel: "unknown",
+          actions: [
+            "Official restrictions have not been verified. Do not treat missing guidance as permission.",
+          ],
+          confidence: "unknown",
+          lastReviewedAt: "",
+          sources: [],
+          isFallback: true,
+        },
+      ],
+    },
+  ],
 };
 
 afterEach(async () => {
@@ -91,6 +139,13 @@ describe("TripPlanner", () => {
       screen.getByRole("button", { name: "Get route guidance" }),
     );
     await screen.findByText("Overall result");
+    expect(screen.getByText("General route guidance")).toBeInTheDocument();
+    expect(
+      screen.getByText("Medication category guidance"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Do not treat missing guidance as permission/),
+    ).toBeInTheDocument();
 
     const guidanceRequest = requests.find(
       ({ url }) => url === "/api/guidance/evaluate",

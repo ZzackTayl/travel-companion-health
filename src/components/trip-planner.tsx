@@ -4,11 +4,15 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { DurationNotice } from "@/components/duration-notice";
 import {
   medicationCategories,
+  medicationCategoryLabels,
   type Airport,
   type GuidanceEvaluation,
+  type GuidanceItem,
+  type GuidanceType,
   type MedicationCategory,
   type ResolvedRoute,
   type RiskLabel,
+  type RouteRole,
 } from "@/lib/domain";
 import {
   clearSavedTrips,
@@ -19,24 +23,6 @@ import {
   type SavedTrip,
 } from "@/lib/saved-trips";
 
-const categoryLabels: Record<MedicationCategory, string> = {
-  prescription: "Prescription medicine",
-  over_the_counter: "Over-the-counter medicine",
-  controlled_substance: "Controlled substance",
-  opioid: "Opioid",
-  stimulant_adhd: "ADHD stimulant",
-  sedative_anxiety: "Sedative or anxiety medicine",
-  sleep_medication: "Sleep medicine",
-  pseudoephedrine: "Pseudoephedrine",
-  cannabis_derived: "Cannabis-derived product",
-  injectable: "Injectable",
-  liquid_over_100ml: "Liquid over 100 mL",
-  refrigerated: "Refrigerated medicine",
-  medical_device: "Medical device",
-  needles_or_sharps: "Needles or sharps",
-  unknown: "Not sure",
-};
-
 const riskLabels: Record<RiskLabel, string> = {
   likely_ok: "Likely OK",
   check_documentation: "Check documentation",
@@ -45,12 +31,86 @@ const riskLabels: Record<RiskLabel, string> = {
   unknown: "Not yet verified",
 };
 
+const guidanceTypeLabels: Record<GuidanceType, string> = {
+  general: "General",
+  packaging: "Packaging",
+  documentation: "Documentation",
+  quantity_limit: "Quantity limit",
+  prohibited: "Prohibited items",
+  restricted: "Restrictions",
+  screening: "Screening",
+  declaration: "Declaration",
+  transit: "Transit",
+  airline_carriage: "Airline carriage",
+};
+
+const routeRoleLabels: Record<RouteRole, string> = {
+  origin: "Origin",
+  transit: "Transit",
+  destination: "Destination",
+};
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = await response.json();
   if (!response.ok) {
     throw new Error(body.error ?? "The request could not be completed");
   }
   return body;
+}
+
+function GuidanceItemCard({
+  item,
+  title,
+}: {
+  item: GuidanceItem;
+  title: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-950/50 p-4">
+      <div className="flex flex-wrap justify-between gap-2">
+        <h5 className="font-medium">{title}</h5>
+        <span className="text-sm text-amber-100">
+          {riskLabels[item.riskLabel]}
+        </span>
+      </div>
+      <p className="mt-1 text-xs uppercase text-slate-400">
+        {guidanceTypeLabels[item.guidanceType]} ·{" "}
+        {routeRoleLabels[item.routeRole]}
+      </p>
+      <ul className="mt-3 space-y-2 text-sm text-slate-200">
+        {item.actions.map((action) => (
+          <li key={action}>
+            {item.isFallback ? "!" : "•"} {action}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-slate-400">
+        Confidence: {item.confidence.replaceAll("_", " ")}
+        {item.lastReviewedAt ? ` · Reviewed ${item.lastReviewedAt}` : ""}
+      </p>
+      {item.sources.length > 0 ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-sm text-cyan-200">
+            Official sources
+          </summary>
+          <ul className="mt-2 space-y-2 text-sm">
+            {item.sources.map((source) => (
+              <li key={source.id}>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cyan-300 underline"
+                >
+                  {source.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
 }
 
 export function TripPlanner() {
@@ -460,7 +520,7 @@ export function TripPlanner() {
                     onChange={() => toggleCategory(category)}
                     className="h-4 w-4 accent-cyan-300"
                   />
-                  {categoryLabels[category]}
+                  {medicationCategoryLabels[category]}
                 </label>
               ))}
             </div>
@@ -530,37 +590,56 @@ export function TripPlanner() {
                       {riskLabels[jurisdiction.riskLabel]}
                     </span>
                   </div>
-                  <ul className="mt-4 space-y-2 text-sm text-slate-200">
-                    {jurisdiction.actions.map((action) => (
-                      <li key={action}>✓ {action}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-4 text-xs text-slate-400">
-                    Confidence: {jurisdiction.confidence.replaceAll("_", " ")}
-                    {jurisdiction.lastReviewedAt
-                      ? ` · Reviewed ${jurisdiction.lastReviewedAt}`
-                      : ""}
-                  </p>
-                  {jurisdiction.sources.length > 0 ? (
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-sm text-cyan-200">
-                        Official sources
-                      </summary>
-                      <ul className="mt-2 space-y-2 text-sm">
-                        {jurisdiction.sources.map((source) => (
-                          <li key={source.id}>
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-cyan-300 underline"
-                            >
-                              {source.title}
-                            </a>
-                          </li>
+                  {(jurisdiction.generalGuidance ?? []).length > 0 ? (
+                    <section
+                      className="mt-5"
+                      aria-label="General route guidance"
+                    >
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-cyan-200">
+                        General route guidance
+                      </h4>
+                      <div className="mt-3 space-y-3">
+                        {jurisdiction.generalGuidance.map((item) => (
+                          <GuidanceItemCard
+                            key={`${item.guidanceType}-${item.routeRole}`}
+                            item={item}
+                            title={`${routeRoleLabels[item.routeRole]} guidance`}
+                          />
                         ))}
-                      </ul>
-                    </details>
+                      </div>
+                    </section>
+                  ) : null}
+                  {(jurisdiction.categoryGuidance ?? []).length > 0 ? (
+                    <section
+                      className="mt-5"
+                      aria-label="Medication category guidance"
+                    >
+                      <h4 className="text-sm font-semibold uppercase tracking-wide text-cyan-200">
+                        Medication category guidance
+                      </h4>
+                      <div className="mt-3 space-y-3">
+                        {jurisdiction.categoryGuidance.map((item) => (
+                          <GuidanceItemCard
+                            key={`${item.medicationCategory}-${item.guidanceType}-${item.routeRole}`}
+                            item={item}
+                            title={
+                              item.medicationCategory
+                                ? medicationCategoryLabels[
+                                    item.medicationCategory
+                                  ]
+                                : "Medication category"
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {!jurisdiction.generalGuidance &&
+                  !jurisdiction.categoryGuidance ? (
+                    <p className="mt-4 text-sm text-amber-100">
+                      This saved result uses an older format. Run the route
+                      again to see category-specific coverage.
+                    </p>
                   ) : null}
                 </article>
               ))}
