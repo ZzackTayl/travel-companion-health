@@ -21,9 +21,37 @@ describe("POST /api/guidance/evaluate", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      overallRisk: "check_documentation",
+    const body = await response.json();
+    expect(body).toMatchObject({
+      overallRisk: "unknown",
       durationDays: 11,
+    });
+    expect(
+      body.jurisdictions.find(
+        ({ jurisdictionId }: { jurisdictionId: string }) =>
+          jurisdictionId === "country_us",
+      ),
+    ).toMatchObject({
+      riskLabel: "unknown",
+      generalGuidance: [
+        expect.objectContaining({
+          medicationCategory: null,
+          confidence: "official_verified",
+        }),
+      ],
+      categoryGuidance: expect.arrayContaining([
+        expect.objectContaining({
+          medicationCategory: "injectable",
+          guidanceType: "restricted",
+          riskLabel: "unknown",
+          isFallback: true,
+        }),
+        expect.objectContaining({
+          medicationCategory: "injectable",
+          guidanceType: "documentation",
+          isFallback: false,
+        }),
+      ]),
     });
   });
 
