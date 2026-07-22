@@ -7,7 +7,7 @@ export default function TripPage() {
       <div className="mx-auto max-w-7xl">
         <Link
           href="/"
-          className="no-print inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 font-medium text-slate-100 transition hover:bg-white/10"
+          className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 font-medium text-slate-100 transition hover:bg-white/10"
         >
           ← Back to overview
         </Link>
@@ -19,9 +19,9 @@ export default function TripPage() {
             Resolve every stop before you travel with medicine.
           </h1>
           <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">
-            Search the airport catalog, include every layover, and see both
-            available preparation guidance and explicit coverage gaps for each
-            jurisdiction on your route.
+            Search the server airport catalog, include layovers, and get
+            reviewed, source-backed preparation guidance for each jurisdiction
+            on your route.
           </p>
         </div>
         <TripPlanner />

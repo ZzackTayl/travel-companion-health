@@ -1,71 +1,5 @@
 BEGIN;
 
-UPDATE medication_categories
-SET slug = 'stimulant_adhd'
-WHERE slug = 'stimulant'
-  AND NOT EXISTS (
-    SELECT 1 FROM medication_categories WHERE slug = 'stimulant_adhd'
-  );
-UPDATE medication_categories
-SET slug = 'sedative_anxiety'
-WHERE slug = 'sedative'
-  AND NOT EXISTS (
-    SELECT 1 FROM medication_categories WHERE slug = 'sedative_anxiety'
-  );
-UPDATE medication_categories
-SET slug = 'sleep_medication'
-WHERE slug = 'sleep_medicine'
-  AND NOT EXISTS (
-    SELECT 1 FROM medication_categories WHERE slug = 'sleep_medication'
-  );
-UPDATE medication_categories
-SET slug = 'liquid_over_100ml'
-WHERE slug = 'liquid'
-  AND NOT EXISTS (
-    SELECT 1 FROM medication_categories WHERE slug = 'liquid_over_100ml'
-  );
-
-CREATE OR REPLACE FUNCTION record_guidance_status_change()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-  IF TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM NEW.status THEN
-    INSERT INTO public.guidance_audit_log (
-      guidance_record_id, actor_id, action, from_status, to_status
-    ) VALUES (
-      NEW.id,
-      coalesce(public.request_actor_id(), NEW.reviewer_id),
-      CASE WHEN TG_OP = 'INSERT' THEN 'created' ELSE 'status_changed' END,
-      CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.status END,
-      NEW.status
-    );
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION record_source_addition()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-  INSERT INTO public.guidance_audit_log (
-    guidance_record_id, actor_id, action, details
-  ) VALUES (
-    NEW.guidance_record_id,
-    public.request_actor_id(),
-    'evidence_added',
-    jsonb_build_object('sourceId', NEW.id)
-  );
-  RETURN NEW;
-END;
-$$;
-
 CREATE FUNCTION protect_reviewed_guidance()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -141,8 +75,6 @@ FOR INSERT WITH CHECK (
   current_admin_role() IS NOT NULL AND status = 'draft'
 );
 
-REVOKE ALL ON FUNCTION record_guidance_status_change() FROM PUBLIC;
-REVOKE ALL ON FUNCTION record_source_addition() FROM PUBLIC;
 REVOKE ALL ON FUNCTION protect_reviewed_guidance() FROM PUBLIC;
 REVOKE ALL ON FUNCTION protect_source_verification() FROM PUBLIC;
 

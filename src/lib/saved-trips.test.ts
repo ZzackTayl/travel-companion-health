@@ -11,19 +11,28 @@ import {
 import type { GuidanceEvaluation } from "@/lib/domain";
 
 const guidance = {
-  contractVersion: 2,
-  generatedAt: "2026-07-22T00:00:00.000Z",
-  refreshAfter: "2026-12-12",
-  completeness: "partial",
-  dataProvenance: {
-    mode: "prototype_fixture",
-    productionEligible: false,
-  },
   overallRisk: "likely_ok",
   durationDays: null,
   durationWarning: null,
   route: { stops: [], countries: [], jurisdictions: [] },
   jurisdictions: [],
+  metadata: {
+    evaluation: {
+      id: "evaluation-test",
+      evaluatedAt: "2026-07-22T12:00:00.000Z",
+      contractVersion: 2,
+    },
+    revisions: { ids: [] },
+    freshness: { status: "fresh", earliestStaleAfter: null },
+    evidence: { sourceCount: 0, sourceIds: [], oldestVerifiedAt: null },
+    coverage: {
+      requested: 0,
+      covered: 0,
+      unknown: 0,
+      complete: true,
+      items: [],
+    },
+  },
 } satisfies GuidanceEvaluation;
 
 describe("saved trips IndexedDB repository", () => {

@@ -24,29 +24,19 @@ export function isValidDate(value: string) {
 }
 
 export function getTripDuration(departureDate?: string, returnDate?: string) {
-  if (!departureDate || !returnDate) return null;
-  const departure = parseDate(departureDate);
-  const returning = parseDate(returnDate);
-  if (departure === null || returning === null) {
+  const departure = departureDate ? parseDate(departureDate) : null;
+  const returning = returnDate ? parseDate(returnDate) : null;
+  if (
+    (departureDate && departure === null) ||
+    (returnDate && returning === null)
+  ) {
     throw new Error("Dates must use a valid YYYY-MM-DD format");
   }
+  if (departure === null || returning === null) return null;
   if (returning < departure) {
     throw new Error("Return date must be on or after departure date");
   }
   return Math.floor((returning - departure) / DAY_MS) + 1;
-}
-
-export function getTravelReferenceDate(
-  departureDate: string | undefined,
-  returnDate: string | undefined,
-  now = new Date(),
-) {
-  const requestedDate = returnDate ?? departureDate;
-  if (!requestedDate) return now.toISOString().slice(0, 10);
-  if (!isValidDate(requestedDate)) {
-    throw new Error("Dates must use a valid YYYY-MM-DD format");
-  }
-  return requestedDate;
 }
 
 export function getDurationWarning(durationDays: number | null) {

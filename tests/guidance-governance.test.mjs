@@ -35,7 +35,8 @@ function guidance(overrides = {}) {
     guidanceType: "documentation",
     riskLabel: "check_documentation",
     title: "Carry prescription documentation",
-    summary: "Official guidance recommends carrying prescription documentation.",
+    summary:
+      "Official guidance recommends carrying prescription documentation.",
     actionText: "Carry a copy of your prescription while traveling.",
     appliesToTransit: true,
     effectiveFrom: null,
@@ -177,6 +178,22 @@ test("unknown and high-risk guidance must include official verification", () => 
     now,
   );
   assert.match(result.errors.join(" "), /official authority/);
+});
+
+test("unofficial and non-government sources do not satisfy verification copy", () => {
+  for (const actionText of [
+    "Check an unofficial source before travel.",
+    "Confirm this with a non-government organization.",
+  ]) {
+    const result = validateForPublication(
+      guidance({
+        riskLabel: "high_risk",
+        actionText,
+      }),
+      now,
+    );
+    assert.match(result.errors.join(" "), /official authority/);
+  }
 });
 
 test("legal guarantees block publication", () => {

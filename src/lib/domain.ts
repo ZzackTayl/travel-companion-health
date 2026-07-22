@@ -18,6 +18,39 @@ export const medicationCategories = [
 
 export type MedicationCategory = (typeof medicationCategories)[number];
 
+export const medicationCategoryLabels: Record<MedicationCategory, string> = {
+  prescription: "Prescription medicine",
+  over_the_counter: "Over-the-counter medicine",
+  controlled_substance: "Controlled substance",
+  opioid: "Opioid",
+  stimulant_adhd: "ADHD stimulant",
+  sedative_anxiety: "Sedative or anxiety medicine",
+  sleep_medication: "Sleep medicine",
+  pseudoephedrine: "Pseudoephedrine",
+  cannabis_derived: "Cannabis-derived product",
+  injectable: "Injectable",
+  liquid_over_100ml: "Liquid over 100 mL",
+  refrigerated: "Refrigerated medicine",
+  medical_device: "Medical device",
+  needles_or_sharps: "Needles or sharps",
+  unknown: "Not sure",
+};
+
+export const guidanceTypes = [
+  "general",
+  "packaging",
+  "documentation",
+  "quantity_limit",
+  "prohibited",
+  "restricted",
+  "screening",
+  "declaration",
+  "transit",
+  "airline_carriage",
+] as const;
+
+export type GuidanceType = (typeof guidanceTypes)[number];
+
 export const riskLabels = [
   "likely_ok",
   "check_documentation",
@@ -76,45 +109,95 @@ export interface SourceReference {
   url: string;
   sourceType: string;
   qualityTier: number;
+  excerpt: string;
+  accessedAt: string;
   lastVerifiedAt: string;
+}
+
+export type GuidanceCoverageReason =
+  | "covered"
+  | "missing_or_ineligible"
+  | "stale"
+  | "unpublished"
+  | "not_effective"
+  | "invalid_evidence";
+
+export interface GuidanceCoverageItem {
+  id: string;
+  jurisdictionId: string;
+  medicationCategory: MedicationCategory | null;
+  guidanceType: string;
+  status: "covered" | "unknown";
+  reason: GuidanceCoverageReason;
+  revisionId: string | null;
+  lastReviewedAt: string | null;
+  staleAfter: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}
+
+export interface GuidanceCoverageSummary {
+  requested: number;
+  covered: number;
+  unknown: number;
+  complete: boolean;
+  items: GuidanceCoverageItem[];
 }
 
 export interface JurisdictionGuidance {
   jurisdictionId: string;
-  jurisdictionType: "country" | "airport_authority";
   name: string;
   countryCode: string;
   airportCodes: string[];
   roles: RouteRole[];
   transitOnly: boolean;
   riskLabel: RiskLabel;
-  coverageStatus: "covered" | "partial" | "unknown";
-  coverageGaps: Array<{
-    medicationCategory: MedicationCategory | null;
-    reason:
-      | "missing_general_guidance"
-      | "missing_category_guidance"
-      | "missing_airport_guidance"
-      | "not_verified_for_travel_window";
-  }>;
+  confidence: Confidence;
+  generalGuidance: GuidanceItem[];
+  categoryGuidance: GuidanceItem[];
+}
+
+export interface GuidanceItem {
+  medicationCategory: MedicationCategory | null;
+  guidanceType: GuidanceType;
+  routeRole: RouteRole;
+  riskLabel: RiskLabel;
   actions: string[];
   confidence: Confidence;
   lastReviewedAt: string;
+  staleAfter: string | null;
+  revisionIds: string[];
+  coverage: GuidanceCoverageSummary;
   sources: SourceReference[];
+  isFallback: boolean;
+}
+
+export interface GuidanceEvaluationMetadata {
+  evaluation: {
+    id: string;
+    evaluatedAt: string;
+    contractVersion: 2;
+  };
+  revisions: {
+    ids: string[];
+  };
+  freshness: {
+    status: "fresh" | "incomplete";
+    earliestStaleAfter: string | null;
+  };
+  evidence: {
+    sourceCount: number;
+    sourceIds: string[];
+    oldestVerifiedAt: string | null;
+  };
+  coverage: GuidanceCoverageSummary;
 }
 
 export interface GuidanceEvaluation {
-  contractVersion: 2;
-  generatedAt: string;
-  refreshAfter: string | null;
-  completeness: "complete" | "partial" | "unavailable";
-  dataProvenance: {
-    mode: "prototype_fixture" | "governed_database";
-    productionEligible: boolean;
-  };
   overallRisk: RiskLabel;
   durationDays: number | null;
   durationWarning: string | null;
   route: ResolvedRoute;
   jurisdictions: JurisdictionGuidance[];
+  metadata: GuidanceEvaluationMetadata;
 }

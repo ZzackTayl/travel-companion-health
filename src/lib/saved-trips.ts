@@ -12,7 +12,6 @@ export interface LocalMedicine {
 }
 
 export interface SavedTrip {
-  schemaVersion?: 2;
   id: string;
   routeStops: Airport[];
   departureDate?: string;
@@ -39,9 +38,6 @@ function getDatabase() {
       const store = database.createObjectStore("trips", { keyPath: "id" });
       store.createIndex("by-updated", "updatedAt");
     },
-  }).catch((error) => {
-    databasePromise = undefined;
-    throw error;
   });
   return databasePromise;
 }
@@ -53,7 +49,6 @@ export async function saveTrip(
   const now = new Date().toISOString();
   const record: SavedTrip = {
     ...trip,
-    schemaVersion: 2,
     id: trip.id ?? crypto.randomUUID(),
     createdAt: trip.createdAt ?? now,
     updatedAt: now,
