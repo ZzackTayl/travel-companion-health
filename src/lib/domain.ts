@@ -76,7 +76,39 @@ export interface SourceReference {
   url: string;
   sourceType: string;
   qualityTier: number;
+  excerpt: string;
+  accessedAt: string;
   lastVerifiedAt: string;
+}
+
+export type GuidanceCoverageReason =
+  | "covered"
+  | "missing_or_ineligible"
+  | "stale"
+  | "unpublished"
+  | "not_effective"
+  | "invalid_evidence";
+
+export interface GuidanceCoverageItem {
+  id: string;
+  jurisdictionId: string;
+  medicationCategory: MedicationCategory | null;
+  guidanceType: string;
+  status: "covered" | "unknown";
+  reason: GuidanceCoverageReason;
+  revisionId: string | null;
+  lastReviewedAt: string | null;
+  staleAfter: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}
+
+export interface GuidanceCoverageSummary {
+  requested: number;
+  covered: number;
+  unknown: number;
+  complete: boolean;
+  items: GuidanceCoverageItem[];
 }
 
 export interface JurisdictionGuidance {
@@ -90,7 +122,31 @@ export interface JurisdictionGuidance {
   actions: string[];
   confidence: Confidence;
   lastReviewedAt: string;
+  staleAfter: string | null;
+  revisionIds: string[];
+  coverage: GuidanceCoverageSummary;
   sources: SourceReference[];
+}
+
+export interface GuidanceEvaluationMetadata {
+  evaluation: {
+    id: string;
+    evaluatedAt: string;
+    contractVersion: 2;
+  };
+  revisions: {
+    ids: string[];
+  };
+  freshness: {
+    status: "fresh" | "incomplete";
+    earliestStaleAfter: string | null;
+  };
+  evidence: {
+    sourceCount: number;
+    sourceIds: string[];
+    oldestVerifiedAt: string | null;
+  };
+  coverage: GuidanceCoverageSummary;
 }
 
 export interface GuidanceEvaluation {
@@ -99,4 +155,5 @@ export interface GuidanceEvaluation {
   durationWarning: string | null;
   route: ResolvedRoute;
   jurisdictions: JurisdictionGuidance[];
+  metadata: GuidanceEvaluationMetadata;
 }

@@ -8,6 +8,7 @@ import type {
 
 const VERIFY_ACTION_PATTERN =
   /\b(verify|check|confirm|contact)\b[\s\S]*\b(official|authority|embassy|customs|government)\b/i;
+const DISALLOWED_AUTHORITY_PATTERN = /\b(unofficial|non-government(?:al)?)\b/i;
 const GUARANTEE_PATTERN =
   /\b(guaranteed|definitely legal|completely safe|will be allowed|will clear customs)\b/i;
 
@@ -87,7 +88,8 @@ export function validateForPublication(
   }
   if (
     (record.riskLabel === "high_risk" || record.riskLabel === "unknown") &&
-    !VERIFY_ACTION_PATTERN.test(record.actionText)
+    (!VERIFY_ACTION_PATTERN.test(record.actionText) ||
+      DISALLOWED_AUTHORITY_PATTERN.test(record.actionText))
   ) {
     errors.push(
       "high-risk and unknown guidance must direct users to an official authority",

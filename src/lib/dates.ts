@@ -20,12 +20,15 @@ function parseDate(value: string) {
 }
 
 export function getTripDuration(departureDate?: string, returnDate?: string) {
-  if (!departureDate || !returnDate) return null;
-  const departure = parseDate(departureDate);
-  const returning = parseDate(returnDate);
-  if (departure === null || returning === null) {
+  const departure = departureDate ? parseDate(departureDate) : null;
+  const returning = returnDate ? parseDate(returnDate) : null;
+  if (
+    (departureDate && departure === null) ||
+    (returnDate && returning === null)
+  ) {
     throw new Error("Dates must use a valid YYYY-MM-DD format");
   }
+  if (departure === null || returning === null) return null;
   if (returning < departure) {
     throw new Error("Return date must be on or after departure date");
   }

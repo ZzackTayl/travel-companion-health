@@ -17,6 +17,12 @@ describe("trip duration", () => {
     expect(() => getTripDuration("2026-02-30", "2026-03-02")).toThrow(
       "Dates must use a valid YYYY-MM-DD format",
     );
+    expect(() => getTripDuration("2026-02-30")).toThrow(
+      "Dates must use a valid YYYY-MM-DD format",
+    );
+    expect(() => getTripDuration(undefined, "2026-02-30")).toThrow(
+      "Dates must use a valid YYYY-MM-DD format",
+    );
   });
 
   it("warns only for trips longer than 30 days", () => {

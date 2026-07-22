@@ -2,25 +2,43 @@ import {
   auditLaunchCoverage,
   createUnknownFallback,
   isPubliclyEligible,
+  isStale,
   validateForPublication,
 } from "./governance";
+import { getTripDuration } from "@/lib/dates";
+import type {
+  Confidence,
+  GuidanceCoverageItem,
+  GuidanceCoverageReason,
+  GuidanceCoverageSummary,
+  GuidanceEvaluation,
+  MedicationCategory,
+  ResolvedJurisdiction,
+  RiskLabel,
+  SourceReference,
+} from "@/lib/domain";
+import { resolveRoute } from "@/lib/routes";
 import type {
   CoverageResult,
-  EvaluatedGuidance,
   GuidanceRecord,
+  GuidanceType,
   LaunchCoverageRequirement,
+  PublicGuidanceRecord,
+  PublicGuidanceRequirement,
 } from "./types";
 
 export interface GuidanceRepository {
-  getGuidanceForRequirements(
-    requirements: LaunchCoverageRequirement[],
-  ): Promise<GuidanceRecord[]>;
   getGuidanceForCoverage(
     requirements: LaunchCoverageRequirement[],
   ): Promise<GuidanceRecord[]>;
-  getGuidanceById(id: string): Promise<GuidanceRecord | null>;
   savePublished(record: GuidanceRecord): Promise<void>;
   listLaunchCoverageRequirements(): Promise<LaunchCoverageRequirement[]>;
+}
+
+export interface PublicGuidanceRepository {
+  getGuidanceForRoute(
+    requirements: PublicGuidanceRequirement[],
+  ): Promise<PublicGuidanceRecord[]>;
 }
 
 export class PublicationRejectedError extends Error {
@@ -49,27 +67,6 @@ export async function publishGuidance(
   return candidate;
 }
 
-export async function evaluateGuidance(
-  repository: GuidanceRepository,
-  requirements: LaunchCoverageRequirement[],
-  now = new Date(),
-): Promise<EvaluatedGuidance[]> {
-  const records = await repository.getGuidanceForRequirements(requirements);
-
-  return requirements.map((requirement) => {
-    const match = records.find(
-      (record) =>
-        record.jurisdictionId === requirement.jurisdictionId &&
-        record.medicationCategoryId === requirement.medicationCategoryId &&
-        record.guidanceType === requirement.guidanceType &&
-        (requirement.guidanceType !== "transit" || record.appliesToTransit) &&
-        isPubliclyEligible(record, now),
-    );
-
-    return match ?? createUnknownFallback(requirement);
-  });
-}
-
 export async function getLaunchCoverage(
   repository: GuidanceRepository,
   now = new Date(),
@@ -79,11 +76,387 @@ export async function getLaunchCoverage(
   return auditLaunchCoverage(requirements, records, now);
 }
 
-export async function getPublicGuidanceById(
-  repository: GuidanceRepository,
-  id: string,
-  now = new Date(),
+export class GuidanceUnavailableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Governed guidance is temporarily unavailable", options);
+    this.name = "GuidanceUnavailableError";
+  }
+}
+
+export interface EvaluateGuidanceInput {
+  routeStopIds: string[];
+  departureDate?: string;
+  returnDate?: string;
+  medicationCategories: MedicationCategory[];
+}
+
+interface EvaluationRequirement {
+  id: string;
+  jurisdiction: ResolvedJurisdiction;
+  medicationCategory: MedicationCategory | null;
+  guidanceType: GuidanceType;
+}
+
+interface RequirementResult {
+  requirement: EvaluationRequirement;
+  record: PublicGuidanceRecord | null;
+  actionText: string;
+  riskLabel: RiskLabel;
+  confidence: Confidence;
+  coverage: GuidanceCoverageItem;
+}
+
+const riskWeight: Record<RiskLabel, number> = {
+  likely_ok: 0,
+  check_documentation: 1,
+  prior_permission_may_be_required: 2,
+  unknown: 3,
+  high_risk: 4,
+};
+
+const confidenceWeight: Record<Confidence, number> = {
+  unknown: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  official_verified: 4,
+};
+
+export function aggregateRisk(risks: RiskLabel[]): RiskLabel {
+  return risks.reduce<RiskLabel>(
+    (highest, risk) =>
+      riskWeight[risk] > riskWeight[highest] ? risk : highest,
+    "likely_ok",
+  );
+}
+
+function lowestConfidence(confidences: Confidence[]) {
+  return confidences.reduce<Confidence>(
+    (lowest, confidence) =>
+      confidenceWeight[confidence] < confidenceWeight[lowest]
+        ? confidence
+        : lowest,
+    "official_verified",
+  );
+}
+
+function requirementId(
+  jurisdiction: ResolvedJurisdiction,
+  guidanceType: GuidanceType,
+  medicationCategory: MedicationCategory | null,
 ) {
-  const record = await repository.getGuidanceById(id);
-  return record && isPubliclyEligible(record, now) ? record : null;
+  return [
+    jurisdiction.type,
+    jurisdiction.code,
+    guidanceType,
+    medicationCategory ?? "all",
+  ].join(":");
+}
+
+function addRequirement(
+  requirements: EvaluationRequirement[],
+  jurisdiction: ResolvedJurisdiction,
+  guidanceType: GuidanceType,
+  medicationCategory: MedicationCategory | null = null,
+) {
+  requirements.push({
+    id: requirementId(jurisdiction, guidanceType, medicationCategory),
+    jurisdiction,
+    medicationCategory,
+    guidanceType,
+  });
+}
+
+function buildRequirements(
+  jurisdictions: ResolvedJurisdiction[],
+  categories: MedicationCategory[],
+  durationDays: number | null,
+) {
+  const requirements: EvaluationRequirement[] = [];
+
+  for (const jurisdiction of jurisdictions) {
+    if (jurisdiction.type === "country") {
+      addRequirement(requirements, jurisdiction, "general");
+      addRequirement(requirements, jurisdiction, "documentation");
+      addRequirement(requirements, jurisdiction, "packaging");
+      for (const category of new Set(categories)) {
+        addRequirement(requirements, jurisdiction, "restricted", category);
+      }
+      if (durationDays !== null && durationDays > 30) {
+        addRequirement(requirements, jurisdiction, "quantity_limit");
+      }
+      continue;
+    }
+
+    addRequirement(requirements, jurisdiction, "screening");
+    if (jurisdiction.roles.includes("transit")) {
+      addRequirement(requirements, jurisdiction, "transit");
+    }
+  }
+
+  return requirements;
+}
+
+function matchesRequirement(
+  record: PublicGuidanceRecord,
+  requirement: EvaluationRequirement,
+) {
+  return (
+    record.jurisdictionType === requirement.jurisdiction.type &&
+    record.jurisdictionCode === requirement.jurisdiction.code &&
+    record.medicationCategorySlug === requirement.medicationCategory &&
+    record.guidanceType === requirement.guidanceType &&
+    (requirement.guidanceType !== "transit" || record.appliesToTransit) &&
+    (!requirement.jurisdiction.transitOnly || record.appliesToTransit)
+  );
+}
+
+function coverageFailureReason(
+  candidates: PublicGuidanceRecord[],
+  now: Date,
+): Exclude<GuidanceCoverageReason, "covered"> {
+  if (candidates.length === 0) return "missing_or_ineligible";
+  if (candidates.some((record) => isStale(record, now))) return "stale";
+
+  const currentDate = now.toISOString().slice(0, 10);
+  if (
+    candidates.some((record) => {
+      const effectiveFrom = record.effectiveFrom?.toISOString().slice(0, 10);
+      const effectiveTo = record.effectiveTo?.toISOString().slice(0, 10);
+      return (
+        (effectiveFrom !== undefined && effectiveFrom > currentDate) ||
+        (effectiveTo !== undefined && effectiveTo < currentDate)
+      );
+    })
+  ) {
+    return "not_effective";
+  }
+
+  if (candidates.some((record) => record.status !== "published")) {
+    return "unpublished";
+  }
+  return "invalid_evidence";
+}
+
+function evaluateRequirement(
+  requirement: EvaluationRequirement,
+  records: PublicGuidanceRecord[],
+  now: Date,
+): RequirementResult {
+  const candidates = records.filter((record) =>
+    matchesRequirement(record, requirement),
+  );
+  const record =
+    candidates.find((candidate) => isPubliclyEligible(candidate, now)) ?? null;
+
+  if (!record) {
+    const fallback = createUnknownFallback({
+      jurisdictionId: requirement.jurisdiction.id,
+      medicationCategoryId: requirement.medicationCategory,
+      guidanceType: requirement.guidanceType,
+    });
+    const reason = coverageFailureReason(candidates, now);
+    return {
+      requirement,
+      record: null,
+      actionText: fallback.actionText,
+      riskLabel: fallback.riskLabel,
+      confidence: fallback.confidence,
+      coverage: {
+        id: requirement.id,
+        jurisdictionId: requirement.jurisdiction.id,
+        medicationCategory: requirement.medicationCategory,
+        guidanceType: requirement.guidanceType,
+        status: "unknown",
+        reason,
+        revisionId: null,
+        lastReviewedAt: null,
+        staleAfter: null,
+        effectiveFrom: null,
+        effectiveTo: null,
+      },
+    };
+  }
+
+  return {
+    requirement,
+    record,
+    actionText: record.actionText,
+    riskLabel: record.riskLabel,
+    confidence: record.confidence,
+    coverage: {
+      id: requirement.id,
+      jurisdictionId: requirement.jurisdiction.id,
+      medicationCategory: requirement.medicationCategory,
+      guidanceType: requirement.guidanceType,
+      status: "covered",
+      reason: "covered",
+      revisionId: record.id,
+      lastReviewedAt: record.lastReviewedAt?.toISOString() ?? null,
+      staleAfter: record.staleAfter?.toISOString() ?? null,
+      effectiveFrom: record.effectiveFrom?.toISOString() ?? null,
+      effectiveTo: record.effectiveTo?.toISOString() ?? null,
+    },
+  };
+}
+
+function summarizeCoverage(
+  items: GuidanceCoverageItem[],
+): GuidanceCoverageSummary {
+  const covered = items.filter(({ status }) => status === "covered").length;
+  return {
+    requested: items.length,
+    covered,
+    unknown: items.length - covered,
+    complete: covered === items.length,
+    items,
+  };
+}
+
+function uniqueSources(records: PublicGuidanceRecord[]) {
+  const sources = new Map<string, SourceReference>();
+  for (const source of records.flatMap((record) => record.sources)) {
+    sources.set(source.id, {
+      id: source.id,
+      title: source.title,
+      url: source.url,
+      sourceType: source.sourceType,
+      qualityTier: source.qualityTier,
+      excerpt: source.excerpt,
+      accessedAt: source.accessedAt.toISOString(),
+      lastVerifiedAt: source.lastVerifiedAt?.toISOString() ?? "",
+    });
+  }
+  return [...sources.values()];
+}
+
+function earliestDate(values: Array<Date | null>) {
+  const timestamps = values.flatMap((value) =>
+    value ? [value.getTime()] : [],
+  );
+  return timestamps.length > 0
+    ? new Date(Math.min(...timestamps)).toISOString()
+    : null;
+}
+
+export async function evaluateRouteGuidance(
+  repository: PublicGuidanceRepository,
+  input: EvaluateGuidanceInput,
+  now = new Date(),
+  evaluationId = crypto.randomUUID(),
+): Promise<GuidanceEvaluation> {
+  const route = resolveRoute(input.routeStopIds);
+  const durationDays = getTripDuration(input.departureDate, input.returnDate);
+  const requirements = buildRequirements(
+    route.jurisdictions,
+    input.medicationCategories,
+    durationDays,
+  );
+  const publicRequirements = [
+    ...new Map(
+      requirements.map(
+        (requirement) =>
+          [
+            requirement.id,
+            {
+              type: requirement.jurisdiction.type,
+              code: requirement.jurisdiction.code,
+              medicationCategorySlug: requirement.medicationCategory,
+              guidanceType: requirement.guidanceType,
+            },
+          ] as const,
+      ),
+    ).values(),
+  ];
+
+  let records: PublicGuidanceRecord[];
+  try {
+    records = await repository.getGuidanceForRoute(publicRequirements);
+  } catch (error) {
+    throw new GuidanceUnavailableError({ cause: error });
+  }
+
+  const results = requirements.map((requirement) =>
+    evaluateRequirement(requirement, records, now),
+  );
+  const coverage = summarizeCoverage(results.map(({ coverage }) => coverage));
+  const coveredRecords = results.flatMap(({ record }) =>
+    record ? [record] : [],
+  );
+  const revisionIds = [...new Set(coveredRecords.map(({ id }) => id))];
+  const sources = uniqueSources(coveredRecords);
+  const earliestStaleAfter = earliestDate(
+    coveredRecords.map(({ staleAfter }) => staleAfter),
+  );
+  const oldestVerifiedAt = earliestDate(
+    coveredRecords.flatMap(({ sources: recordSources }) =>
+      recordSources.map(({ lastVerifiedAt: verifiedAt }) => verifiedAt),
+    ),
+  );
+
+  const jurisdictions = route.jurisdictions.map((jurisdiction) => {
+    const jurisdictionResults = results.filter(
+      ({ requirement }) => requirement.jurisdiction.id === jurisdiction.id,
+    );
+    const jurisdictionRecords = jurisdictionResults.flatMap(({ record }) =>
+      record ? [record] : [],
+    );
+    const jurisdictionCoverage = summarizeCoverage(
+      jurisdictionResults.map(({ coverage: item }) => item),
+    );
+
+    return {
+      jurisdictionId: jurisdiction.id,
+      name: jurisdiction.name,
+      countryCode: jurisdiction.countryCode,
+      airportCodes: jurisdiction.airportCodes,
+      roles: jurisdiction.roles,
+      transitOnly: jurisdiction.transitOnly,
+      riskLabel: aggregateRisk(
+        jurisdictionResults.map(({ riskLabel }) => riskLabel),
+      ),
+      actions: [
+        ...new Set(jurisdictionResults.map(({ actionText }) => actionText)),
+      ],
+      confidence: lowestConfidence(
+        jurisdictionResults.map(({ confidence }) => confidence),
+      ),
+      lastReviewedAt:
+        earliestDate(
+          jurisdictionRecords.map(({ lastReviewedAt }) => lastReviewedAt),
+        ) ?? "",
+      staleAfter: earliestDate(
+        jurisdictionRecords.map(({ staleAfter }) => staleAfter),
+      ),
+      revisionIds: [...new Set(jurisdictionRecords.map(({ id }) => id))],
+      coverage: jurisdictionCoverage,
+      sources: uniqueSources(jurisdictionRecords),
+    };
+  });
+
+  return {
+    overallRisk: aggregateRisk(jurisdictions.map(({ riskLabel }) => riskLabel)),
+    durationDays,
+    durationWarning: null,
+    route,
+    jurisdictions,
+    metadata: {
+      evaluation: {
+        id: evaluationId,
+        evaluatedAt: now.toISOString(),
+        contractVersion: 2,
+      },
+      revisions: { ids: revisionIds },
+      freshness: {
+        status: coverage.complete ? "fresh" : "incomplete",
+        earliestStaleAfter,
+      },
+      evidence: {
+        sourceCount: sources.length,
+        sourceIds: sources.map(({ id }) => id),
+        oldestVerifiedAt,
+      },
+      coverage,
+    },
+  };
 }

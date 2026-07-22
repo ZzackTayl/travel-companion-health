@@ -100,6 +100,19 @@ export interface GuidanceRecord {
   sources: SourceRecord[];
 }
 
+export interface PublicGuidanceRecord extends GuidanceRecord {
+  jurisdictionType: "country" | "airport_authority";
+  jurisdictionCode: string;
+  medicationCategorySlug: string | null;
+}
+
+export interface PublicGuidanceRequirement {
+  type: PublicGuidanceRecord["jurisdictionType"];
+  code: string;
+  medicationCategorySlug: string | null;
+  guidanceType: GuidanceType;
+}
+
 export interface LaunchCoverageRequirement {
   id: string;
   jurisdictionId: string;
