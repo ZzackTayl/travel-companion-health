@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DurationNotice } from "@/components/duration-notice";
 import {
   medicationCategories,
@@ -87,11 +87,14 @@ function GuidanceItemCard({
       <p className="mt-3 text-xs text-slate-400">
         Confidence: {item.confidence.replaceAll("_", " ")}
         {item.lastReviewedAt ? ` · Reviewed ${item.lastReviewedAt}` : ""}
+        {item.staleAfter
+          ? ` · Expires ${new Date(item.staleAfter).toLocaleDateString()}`
+          : ""}
       </p>
       {item.sources.length > 0 ? (
         <details className="mt-3">
           <summary className="cursor-pointer text-sm text-cyan-200">
-            Official sources
+            Supporting evidence
           </summary>
           <ul className="mt-2 space-y-2 text-sm">
             {item.sources.map((source) => (
@@ -104,6 +107,17 @@ function GuidanceItemCard({
                 >
                   {source.title}
                 </a>
+                {source.lastVerifiedAt ? (
+                  <span className="block text-xs text-slate-400">
+                    Verified{" "}
+                    {new Date(source.lastVerifiedAt).toLocaleDateString()}
+                  </span>
+                ) : null}
+                {source.excerpt ? (
+                  <span className="mt-1 block text-xs text-slate-300">
+                    {source.excerpt}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -134,6 +148,7 @@ export function TripPlanner() {
   const [isResolving, setIsResolving] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const evaluationRequest = useRef<AbortController | null>(null);
 
   const medicines = useMemo(
     () => (medicine.name || medicine.categories.length > 0 ? [medicine] : []),
@@ -145,6 +160,13 @@ export function TripPlanner() {
       .then(setSavedTrips)
       .catch(() => setSavedTrips([]));
   }, []);
+
+  useEffect(
+    () => () => {
+      evaluationRequest.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     const search = query.trim();
@@ -208,6 +230,7 @@ export function TripPlanner() {
   }, [routeStops]);
 
   function invalidateEvaluation() {
+    evaluationRequest.current?.abort();
     setEvaluation(null);
     setSavedMessage("");
   }
@@ -252,6 +275,11 @@ export function TripPlanner() {
       return;
     }
 
+    evaluationRequest.current?.abort();
+    const controller = new AbortController();
+    evaluationRequest.current = controller;
+    setEvaluation(null);
+    setSavedMessage("");
     setIsEvaluating(true);
     try {
       const categories = [
@@ -266,16 +294,29 @@ export function TripPlanner() {
           ...(returnDate ? { returnDate } : {}),
           medicationCategories: categories,
         }),
+        signal: controller.signal,
       });
-      setEvaluation(await parseResponse<GuidanceEvaluation>(response));
+      const result = await parseResponse<GuidanceEvaluation>(response);
+      if (
+        !controller.signal.aborted &&
+        evaluationRequest.current === controller
+      ) {
+        setEvaluation(result);
+      }
     } catch (evaluationError) {
-      setError(
-        evaluationError instanceof Error
-          ? evaluationError.message
-          : "Guidance evaluation failed",
-      );
+      if (!controller.signal.aborted) {
+        setEvaluation(null);
+        setError(
+          evaluationError instanceof Error
+            ? evaluationError.message
+            : "Guidance evaluation failed",
+        );
+      }
     } finally {
-      setIsEvaluating(false);
+      if (evaluationRequest.current === controller) {
+        evaluationRequest.current = null;
+        setIsEvaluating(false);
+      }
     }
   }
 
@@ -572,6 +613,35 @@ export function TripPlanner() {
                     .join(" → ")}
                 </p>
               </div>
+              {evaluation.metadata ? (
+                <div
+                  className={`rounded-xl border p-4 text-sm ${
+                    evaluation.metadata.coverage.complete
+                      ? "border-emerald-300/20 bg-emerald-300/10"
+                      : "border-amber-300/20 bg-amber-300/10"
+                  }`}
+                >
+                  {evaluation.metadata.coverage.complete
+                    ? "All requested guidance is covered by current governed records."
+                    : `${evaluation.metadata.coverage.unknown} of ${evaluation.metadata.coverage.requested} requested guidance checks could not be verified. Missing guidance is not permission.`}
+                  <span className="mt-1 block text-xs text-slate-300">
+                    Evaluated{" "}
+                    {new Date(
+                      evaluation.metadata.evaluation.evaluatedAt,
+                    ).toLocaleString()}
+                    {evaluation.metadata.freshness.earliestStaleAfter
+                      ? ` · Earliest expiry ${new Date(
+                          evaluation.metadata.freshness.earliestStaleAfter,
+                        ).toLocaleDateString()}`
+                      : ""}
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm">
+                  This saved result predates governed guidance metadata. Run a
+                  new evaluation before relying on it.
+                </div>
+              )}
               {evaluation.jurisdictions.map((jurisdiction) => (
                 <article
                   key={jurisdiction.jurisdictionId}

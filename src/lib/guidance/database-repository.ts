@@ -1,20 +1,83 @@
+import { z } from "zod";
 import type {
   GuidanceRecord,
   LaunchCoverageRequirement,
+  PublicGuidanceRecord,
+  PublicGuidanceRequirement,
   SourceRecord,
 } from "./types";
-import type { GuidanceRepository } from "./service";
+import {
+  confidenceLevels,
+  guidanceTypes,
+  riskLabels,
+  sourceTypes,
+} from "./types";
+import type { GuidanceRepository, PublicGuidanceRepository } from "./service";
 
-interface DatabaseRepositoryConfig {
+export interface DatabaseRepositoryConfig {
   baseUrl: string;
   publicKey: string;
   adminAccessToken?: string;
+  timeoutMs?: number;
 }
 
 type DatabaseRow = Record<string, unknown>;
 
+const dateStringSchema = z
+  .string()
+  .refine(
+    (value) => !Number.isNaN(new Date(value).getTime()),
+    "Expected a valid date",
+  );
+
+const publicSourceSchema = z.object({
+  id: z.string().min(1),
+  url: z
+    .string()
+    .url()
+    .refine((value) => new URL(value).protocol === "https:"),
+  title: z.string().trim().min(1),
+  sourceType: z.enum(sourceTypes),
+  qualityTier: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+  ]),
+  excerpt: z.string().trim().min(20),
+  accessedAt: dateStringSchema,
+  lastVerifiedAt: dateStringSchema,
+  supportsSummary: z.literal(true),
+});
+
+const publicGuidanceSchema = z.object({
+  id: z.string().min(1),
+  jurisdiction_id: z.string().min(1),
+  jurisdiction_type: z.enum(["country", "airport_authority"]),
+  jurisdiction_code: z.string().trim().min(1),
+  medication_category_id: z.string().nullable(),
+  medication_category_slug: z.string().trim().min(1).nullable(),
+  guidance_type: z.enum(guidanceTypes),
+  risk_label: z.enum(riskLabels),
+  title: z.string().trim().min(1),
+  summary: z.string().trim().min(1),
+  action_text: z.string().trim().min(1),
+  applies_to_transit: z.boolean(),
+  effective_from: dateStringSchema.nullable(),
+  effective_to: dateStringSchema.nullable(),
+  status: z.literal("published"),
+  confidence: z.enum(confidenceLevels),
+  last_reviewed_at: dateStringSchema,
+  stale_after: dateStringSchema,
+  reviewed_for_publication: z.literal(true),
+  lower_tier_evidence_approved: z.boolean(),
+  sources: z.array(publicSourceSchema).min(1),
+});
+
 function asDate(value: unknown) {
-  return typeof value === "string" ? new Date(value) : null;
+  if (typeof value !== "string") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function mapSource(row: DatabaseRow, guidanceRecordId: string): SourceRecord {
@@ -83,6 +146,18 @@ function mapGuidance(row: DatabaseRow): GuidanceRecord {
   };
 }
 
+function mapPublicGuidance(
+  row: z.infer<typeof publicGuidanceSchema>,
+): PublicGuidanceRecord {
+  const mapped = mapGuidance(row);
+  return {
+    ...mapped,
+    jurisdictionType: row.jurisdiction_type,
+    jurisdictionCode: row.jurisdiction_code,
+    medicationCategorySlug: row.medication_category_slug,
+  };
+}
+
 function mapRequirement(row: DatabaseRow): LaunchCoverageRequirement {
   return {
     id: String(row.id),
@@ -123,11 +198,47 @@ function serializeGuidance(record: GuidanceRecord) {
   };
 }
 
-export class DatabaseGuidanceRepository implements GuidanceRepository {
+export class GuidanceDatabaseError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "GuidanceDatabaseError";
+  }
+}
+
+export class DatabaseGuidanceRepository
+  implements GuidanceRepository, PublicGuidanceRepository
+{
   private readonly baseUrl: string;
 
   constructor(private readonly config: DatabaseRepositoryConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, "");
+    let databaseUrl: URL;
+    try {
+      databaseUrl = new URL(config.baseUrl);
+    } catch {
+      throw new GuidanceDatabaseError("Guidance database URL is invalid");
+    }
+    const isLoopback =
+      databaseUrl.hostname === "localhost" ||
+      databaseUrl.hostname === "127.0.0.1" ||
+      databaseUrl.hostname === "[::1]";
+    if (
+      databaseUrl.protocol !== "https:" &&
+      !(databaseUrl.protocol === "http:" && isLoopback)
+    ) {
+      throw new GuidanceDatabaseError("Guidance database URL is invalid");
+    }
+    if (
+      databaseUrl.username ||
+      databaseUrl.password ||
+      databaseUrl.search ||
+      databaseUrl.hash
+    ) {
+      throw new GuidanceDatabaseError("Guidance database URL is invalid");
+    }
+    if (!config.publicKey.trim()) {
+      throw new GuidanceDatabaseError("Guidance database key is missing");
+    }
+    this.baseUrl = databaseUrl.toString().replace(/\/$/, "");
   }
 
   private async request(
@@ -139,7 +250,9 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
       ? this.config.adminAccessToken
       : this.config.publicKey;
     if (!accessToken) {
-      throw new Error("An authenticated admin access token is required");
+      throw new GuidanceDatabaseError(
+        "An authenticated admin access token is required",
+      );
     }
 
     const headers = new Headers(options.headers);
@@ -147,30 +260,54 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
     headers.set("Authorization", `Bearer ${accessToken}`);
     headers.set("Content-Type", "application/json");
 
-    const response = await fetch(`${this.baseUrl}/rest/v1/${path}`, {
-      ...options,
-      headers,
-      cache: "no-store",
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/rest/v1/${path}`, {
+        ...options,
+        headers,
+        cache: "no-store",
+        signal:
+          options.signal ?? AbortSignal.timeout(this.config.timeoutMs ?? 5_000),
+      });
+    } catch (error) {
+      throw new GuidanceDatabaseError("Guidance database request failed", {
+        cause: error,
+      });
+    }
 
     if (!response.ok) {
-      throw new Error(`Guidance database request failed (${response.status})`);
+      throw new GuidanceDatabaseError(
+        `Guidance database request failed (${response.status})`,
+      );
     }
 
     if (response.status === 204) return null;
-    return response.json();
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new GuidanceDatabaseError(
+        "Guidance database returned an invalid response",
+        { cause: error },
+      );
+    }
   }
 
-  async getGuidanceForRequirements(requirements: LaunchCoverageRequirement[]) {
+  async getGuidanceForRoute(requirements: PublicGuidanceRequirement[]) {
     if (requirements.length === 0) return [];
-    const jurisdictionIds = [
-      ...new Set(requirements.map(({ jurisdictionId }) => jurisdictionId)),
-    ];
-    const filter = encodeURIComponent(`(${jurisdictionIds.join(",")})`);
-    const rows = (await this.request(
-      `public_guidance_records?jurisdiction_id=in.${filter}`,
-    )) as DatabaseRow[];
-    return rows.map(mapGuidance);
+    const payload = await this.request("rpc/get_public_guidance_for_route", {
+      method: "POST",
+      body: JSON.stringify({
+        p_requirements: requirements,
+      }),
+    });
+    const parsed = z.array(publicGuidanceSchema).safeParse(payload);
+    if (!parsed.success) {
+      throw new GuidanceDatabaseError(
+        "Guidance database returned an invalid response",
+        { cause: parsed.error },
+      );
+    }
+    return parsed.data.map(mapPublicGuidance);
   }
 
   async getGuidanceForCoverage(requirements: LaunchCoverageRequirement[]) {
@@ -186,13 +323,6 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
       true,
     )) as DatabaseRow[];
     return rows.map(mapGuidance);
-  }
-
-  async getGuidanceById(id: string) {
-    const rows = (await this.request(
-      `public_guidance_records?id=eq.${encodeURIComponent(id)}&limit=1`,
-    )) as DatabaseRow[];
-    return rows[0] ? mapGuidance(rows[0]) : null;
   }
 
   async listLaunchCoverageRequirements() {
@@ -283,12 +413,37 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
     );
   }
 
-  async archiveGuidance(guidanceRecordId: string) {
+  async archiveGuidance(guidanceRecordId: string, reason: string) {
+    if (!reason.trim()) {
+      throw new GuidanceDatabaseError("Archiving guidance requires a reason");
+    }
     await this.request(
       "rpc/archive_guidance",
       {
         method: "POST",
-        body: JSON.stringify({ p_guidance_id: guidanceRecordId }),
+        body: JSON.stringify({
+          p_guidance_id: guidanceRecordId,
+          p_reason: reason,
+        }),
+      },
+      true,
+    );
+  }
+
+  async setPublicEvaluationEnabled(enabled: boolean, reason: string) {
+    if (!reason.trim()) {
+      throw new GuidanceDatabaseError(
+        "Changing public guidance availability requires a reason",
+      );
+    }
+    await this.request(
+      "rpc/set_guidance_public_evaluation_enabled",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          p_enabled: enabled,
+          p_reason: reason,
+        }),
       },
       true,
     );
