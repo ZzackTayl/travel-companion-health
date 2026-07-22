@@ -12,9 +12,11 @@ import type {
   GuidanceCoverageReason,
   GuidanceCoverageSummary,
   GuidanceEvaluation,
+  GuidanceItem,
   MedicationCategory,
   ResolvedJurisdiction,
   RiskLabel,
+  RouteRole,
   SourceReference,
 } from "@/lib/domain";
 import { resolveRoute } from "@/lib/routes";
@@ -95,12 +97,13 @@ interface EvaluationRequirement {
   jurisdiction: ResolvedJurisdiction;
   medicationCategory: MedicationCategory | null;
   guidanceType: GuidanceType;
+  routeRole: RouteRole;
 }
 
 interface RequirementResult {
   requirement: EvaluationRequirement;
   record: PublicGuidanceRecord | null;
-  actionText: string;
+  actions: string[];
   riskLabel: RiskLabel;
   confidence: Confidence;
   coverage: GuidanceCoverageItem;
@@ -144,12 +147,14 @@ function requirementId(
   jurisdiction: ResolvedJurisdiction,
   guidanceType: GuidanceType,
   medicationCategory: MedicationCategory | null,
+  routeRole: RouteRole,
 ) {
   return [
     jurisdiction.type,
     jurisdiction.code,
     guidanceType,
     medicationCategory ?? "all",
+    routeRole,
   ].join(":");
 }
 
@@ -157,13 +162,20 @@ function addRequirement(
   requirements: EvaluationRequirement[],
   jurisdiction: ResolvedJurisdiction,
   guidanceType: GuidanceType,
+  routeRole: RouteRole,
   medicationCategory: MedicationCategory | null = null,
 ) {
   requirements.push({
-    id: requirementId(jurisdiction, guidanceType, medicationCategory),
+    id: requirementId(
+      jurisdiction,
+      guidanceType,
+      medicationCategory,
+      routeRole,
+    ),
     jurisdiction,
     medicationCategory,
     guidanceType,
+    routeRole,
   });
 }
 
@@ -175,22 +187,44 @@ function buildRequirements(
   const requirements: EvaluationRequirement[] = [];
 
   for (const jurisdiction of jurisdictions) {
-    if (jurisdiction.type === "country") {
-      addRequirement(requirements, jurisdiction, "general");
-      addRequirement(requirements, jurisdiction, "documentation");
-      addRequirement(requirements, jurisdiction, "packaging");
-      for (const category of new Set(categories)) {
-        addRequirement(requirements, jurisdiction, "restricted", category);
+    for (const routeRole of jurisdiction.roles) {
+      if (jurisdiction.type === "country") {
+        addRequirement(requirements, jurisdiction, "general", routeRole);
+        addRequirement(requirements, jurisdiction, "documentation", routeRole);
+        addRequirement(requirements, jurisdiction, "packaging", routeRole);
+        for (const category of new Set(categories)) {
+          addRequirement(
+            requirements,
+            jurisdiction,
+            "restricted",
+            routeRole,
+            category,
+          );
+        }
+        if (durationDays !== null && durationDays > 30) {
+          addRequirement(
+            requirements,
+            jurisdiction,
+            "quantity_limit",
+            routeRole,
+          );
+        }
+        continue;
       }
-      if (durationDays !== null && durationDays > 30) {
-        addRequirement(requirements, jurisdiction, "quantity_limit");
-      }
-      continue;
-    }
 
-    addRequirement(requirements, jurisdiction, "screening");
-    if (jurisdiction.roles.includes("transit")) {
-      addRequirement(requirements, jurisdiction, "transit");
+      addRequirement(requirements, jurisdiction, "screening", routeRole);
+      for (const category of new Set(categories)) {
+        addRequirement(
+          requirements,
+          jurisdiction,
+          "screening",
+          routeRole,
+          category,
+        );
+      }
+      if (routeRole === "transit") {
+        addRequirement(requirements, jurisdiction, "transit", routeRole);
+      }
     }
   }
 
@@ -206,8 +240,7 @@ function matchesRequirement(
     record.jurisdictionCode === requirement.jurisdiction.code &&
     record.medicationCategorySlug === requirement.medicationCategory &&
     record.guidanceType === requirement.guidanceType &&
-    (requirement.guidanceType !== "transit" || record.appliesToTransit) &&
-    (!requirement.jurisdiction.transitOnly || record.appliesToTransit)
+    (requirement.routeRole !== "transit" || record.appliesToTransit)
   );
 }
 
@@ -259,7 +292,7 @@ function evaluateRequirement(
     return {
       requirement,
       record: null,
-      actionText: fallback.actionText,
+      actions: [fallback.summary, fallback.actionText],
       riskLabel: fallback.riskLabel,
       confidence: fallback.confidence,
       coverage: {
@@ -281,7 +314,7 @@ function evaluateRequirement(
   return {
     requirement,
     record,
-    actionText: record.actionText,
+    actions: [record.actionText],
     riskLabel: record.riskLabel,
     confidence: record.confidence,
     coverage: {
@@ -330,6 +363,23 @@ function uniqueSources(records: PublicGuidanceRecord[]) {
   return [...sources.values()];
 }
 
+function resultToGuidanceItem(result: RequirementResult): GuidanceItem {
+  return {
+    medicationCategory: result.requirement.medicationCategory,
+    guidanceType: result.requirement.guidanceType,
+    routeRole: result.requirement.routeRole,
+    riskLabel: result.riskLabel,
+    actions: result.actions,
+    confidence: result.confidence,
+    lastReviewedAt: result.coverage.lastReviewedAt ?? "",
+    staleAfter: result.coverage.staleAfter,
+    revisionIds: result.record ? [result.record.id] : [],
+    coverage: summarizeCoverage([result.coverage]),
+    sources: result.record ? uniqueSources([result.record]) : [],
+    isFallback: result.record === null,
+  };
+}
+
 function earliestDate(values: Array<Date | null>) {
   const timestamps = values.flatMap((value) =>
     value ? [value.getTime()] : [],
@@ -352,22 +402,42 @@ export async function evaluateRouteGuidance(
     input.medicationCategories,
     durationDays,
   );
-  const publicRequirements = [
-    ...new Map(
-      requirements.map(
-        (requirement) =>
-          [
-            requirement.id,
-            {
-              type: requirement.jurisdiction.type,
-              code: requirement.jurisdiction.code,
-              medicationCategorySlug: requirement.medicationCategory,
-              guidanceType: requirement.guidanceType,
-            },
-          ] as const,
-      ),
-    ).values(),
-  ];
+  const publicRequirementMap = new Map<string, PublicGuidanceRequirement>();
+  for (const requirement of requirements) {
+    if (requirement.medicationCategory !== null) continue;
+    const lookup = {
+      type: requirement.jurisdiction.type,
+      code: requirement.jurisdiction.code,
+      medicationCategorySlug: requirement.medicationCategory,
+      guidanceType: requirement.guidanceType,
+    };
+    publicRequirementMap.set(
+      [
+        lookup.type,
+        lookup.code,
+        lookup.medicationCategorySlug,
+        lookup.guidanceType,
+      ].join(":"),
+      lookup,
+    );
+  }
+  for (const jurisdiction of route.jurisdictions) {
+    for (const medicationCategorySlug of new Set(input.medicationCategories)) {
+      const lookup: PublicGuidanceRequirement = {
+        type: jurisdiction.type,
+        code: jurisdiction.code,
+        medicationCategorySlug,
+        guidanceType: null,
+      };
+      publicRequirementMap.set(
+        [lookup.type, lookup.code, lookup.medicationCategorySlug, "*"].join(
+          ":",
+        ),
+        lookup,
+      );
+    }
+  }
+  const publicRequirements = [...publicRequirementMap.values()];
 
   let records: PublicGuidanceRecord[];
   try {
@@ -376,10 +446,50 @@ export async function evaluateRouteGuidance(
     throw new GuidanceUnavailableError({ cause: error });
   }
 
-  const results = requirements.map((requirement) =>
+  const requiredResults = requirements.map((requirement) =>
     evaluateRequirement(requirement, records, now),
   );
-  const coverage = summarizeCoverage(results.map(({ coverage }) => coverage));
+  const optionalResults = route.jurisdictions.flatMap((jurisdiction) =>
+    jurisdiction.roles.flatMap((routeRole) =>
+      [...new Set(input.medicationCategories)].flatMap((medicationCategory) => {
+        const requiredType =
+          jurisdiction.type === "country" ? "restricted" : "screening";
+        return records
+          .filter(
+            (record) =>
+              record.jurisdictionType === jurisdiction.type &&
+              record.jurisdictionCode === jurisdiction.code &&
+              record.medicationCategorySlug === medicationCategory &&
+              record.guidanceType !== "general" &&
+              record.guidanceType !== requiredType &&
+              (routeRole !== "transit" || record.appliesToTransit) &&
+              isPubliclyEligible(record, now),
+          )
+          .map((record) =>
+            evaluateRequirement(
+              {
+                id: requirementId(
+                  jurisdiction,
+                  record.guidanceType,
+                  medicationCategory,
+                  routeRole,
+                ),
+                jurisdiction,
+                medicationCategory,
+                guidanceType: record.guidanceType,
+                routeRole,
+              },
+              [record],
+              now,
+            ),
+          );
+      }),
+    ),
+  );
+  const results = [...requiredResults, ...optionalResults];
+  const coverage = summarizeCoverage(
+    requiredResults.map(({ coverage: item }) => item),
+  );
   const coveredRecords = results.flatMap(({ record }) =>
     record ? [record] : [],
   );
@@ -398,12 +508,7 @@ export async function evaluateRouteGuidance(
     const jurisdictionResults = results.filter(
       ({ requirement }) => requirement.jurisdiction.id === jurisdiction.id,
     );
-    const jurisdictionRecords = jurisdictionResults.flatMap(({ record }) =>
-      record ? [record] : [],
-    );
-    const jurisdictionCoverage = summarizeCoverage(
-      jurisdictionResults.map(({ coverage: item }) => item),
-    );
+    const items = jurisdictionResults.map(resultToGuidanceItem);
 
     return {
       jurisdictionId: jurisdiction.id,
@@ -412,25 +517,14 @@ export async function evaluateRouteGuidance(
       airportCodes: jurisdiction.airportCodes,
       roles: jurisdiction.roles,
       transitOnly: jurisdiction.transitOnly,
-      riskLabel: aggregateRisk(
-        jurisdictionResults.map(({ riskLabel }) => riskLabel),
+      riskLabel: aggregateRisk(items.map(({ riskLabel }) => riskLabel)),
+      confidence: lowestConfidence(items.map(({ confidence }) => confidence)),
+      generalGuidance: items.filter(
+        ({ medicationCategory }) => medicationCategory === null,
       ),
-      actions: [
-        ...new Set(jurisdictionResults.map(({ actionText }) => actionText)),
-      ],
-      confidence: lowestConfidence(
-        jurisdictionResults.map(({ confidence }) => confidence),
+      categoryGuidance: items.filter(
+        ({ medicationCategory }) => medicationCategory !== null,
       ),
-      lastReviewedAt:
-        earliestDate(
-          jurisdictionRecords.map(({ lastReviewedAt }) => lastReviewedAt),
-        ) ?? "",
-      staleAfter: earliestDate(
-        jurisdictionRecords.map(({ staleAfter }) => staleAfter),
-      ),
-      revisionIds: [...new Set(jurisdictionRecords.map(({ id }) => id))],
-      coverage: jurisdictionCoverage,
-      sources: uniqueSources(jurisdictionRecords),
     };
   });
 

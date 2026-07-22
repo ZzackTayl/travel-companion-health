@@ -215,6 +215,46 @@ ON CONFLICT (
 INSERT INTO launch_coverage_requirements (
   jurisdiction_id, medication_category_id, guidance_type, label
 )
+SELECT
+  jurisdiction.id,
+  medication_category.id,
+  'screening',
+  jurisdiction.name || ': ' || medication_category.label
+FROM jurisdictions jurisdiction
+CROSS JOIN medication_categories medication_category
+WHERE jurisdiction.type = 'airport_authority'
+  AND jurisdiction.code IN (
+    'JFK', 'LGA', 'EWR', 'LAX', 'ORD', 'LHR', 'LGW', 'MAN',
+    'DXB', 'AUH', 'CDG', 'ORY', 'FRA', 'AMS', 'NRT', 'HND',
+    'SIN', 'DEL', 'BOM', 'SYD', 'MEL', 'YYZ', 'YVR', 'MEX',
+    'DOH', 'GRU', 'JNB', 'ICN'
+  )
+  AND medication_category.slug IN (
+    'prescription',
+    'over_the_counter',
+    'controlled_substance',
+    'stimulant_adhd',
+    'opioid',
+    'sedative_anxiety',
+    'sleep_medication',
+    'pseudoephedrine',
+    'cannabis_derived',
+    'injectable',
+    'liquid_over_100ml',
+    'refrigerated',
+    'medical_device',
+    'needles_or_sharps',
+    'unknown'
+  )
+ON CONFLICT (
+  jurisdiction_id, medication_category_id, guidance_type
+) DO UPDATE SET
+  label = EXCLUDED.label,
+  required_at_launch = true;
+
+INSERT INTO launch_coverage_requirements (
+  jurisdiction_id, medication_category_id, guidance_type, label
+)
 SELECT id, NULL, 'transit', name || ': transit guidance'
 FROM jurisdictions
 WHERE type = 'airport_authority'

@@ -36,25 +36,129 @@ const route: ResolvedRoute = {
 };
 
 const evaluation: GuidanceEvaluation = {
-  overallRisk: "check_documentation",
+  overallRisk: "unknown",
   durationDays: null,
   durationWarning: null,
   route,
-  jurisdictions: [],
+  jurisdictions: [
+    {
+      jurisdictionId: "country_gb",
+      name: "United Kingdom",
+      countryCode: "GB",
+      airportCodes: ["LHR"],
+      roles: ["destination"],
+      transitOnly: false,
+      riskLabel: "unknown",
+      confidence: "unknown",
+      generalGuidance: [
+        {
+          medicationCategory: null,
+          guidanceType: "general",
+          routeRole: "destination",
+          riskLabel: "check_documentation",
+          actions: ["Keep medicines in original labeled packaging."],
+          confidence: "official_verified",
+          lastReviewedAt: "2026-06-15",
+          staleAfter: "2026-10-01T00:00:00.000Z",
+          revisionIds: ["revision-gb-general"],
+          coverage: {
+            requested: 1,
+            covered: 1,
+            unknown: 0,
+            complete: true,
+            items: [
+              {
+                id: "country:GB:general:all:destination",
+                jurisdictionId: "country_gb",
+                medicationCategory: null,
+                guidanceType: "general",
+                status: "covered",
+                reason: "covered",
+                revisionId: "revision-gb-general",
+                lastReviewedAt: "2026-06-15",
+                staleAfter: "2026-10-01T00:00:00.000Z",
+                effectiveFrom: null,
+                effectiveTo: null,
+              },
+            ],
+          },
+          sources: [
+            {
+              id: "source_gb",
+              title: "Official United Kingdom guidance",
+              url: "https://www.gov.uk/",
+              sourceType: "government",
+              qualityTier: 1,
+              excerpt:
+                "Travelers should keep medicines in their original packaging.",
+              accessedAt: "2026-06-15T00:00:00.000Z",
+              lastVerifiedAt: "2026-06-15",
+            },
+          ],
+          isFallback: false,
+        },
+      ],
+      categoryGuidance: [
+        {
+          medicationCategory: "controlled_substance",
+          guidanceType: "restricted",
+          routeRole: "destination",
+          riskLabel: "unknown",
+          actions: [
+            "Official restrictions have not been verified. Do not treat missing guidance as permission.",
+          ],
+          confidence: "unknown",
+          lastReviewedAt: "",
+          staleAfter: null,
+          revisionIds: [],
+          coverage: {
+            requested: 1,
+            covered: 0,
+            unknown: 1,
+            complete: false,
+            items: [
+              {
+                id: "country:GB:restricted:controlled_substance:destination",
+                jurisdictionId: "country_gb",
+                medicationCategory: "controlled_substance",
+                guidanceType: "restricted",
+                status: "unknown",
+                reason: "missing_or_ineligible",
+                revisionId: null,
+                lastReviewedAt: null,
+                staleAfter: null,
+                effectiveFrom: null,
+                effectiveTo: null,
+              },
+            ],
+          },
+          sources: [],
+          isFallback: true,
+        },
+      ],
+    },
+  ],
   metadata: {
     evaluation: {
       id: "evaluation-test",
       evaluatedAt: "2026-07-22T12:00:00.000Z",
       contractVersion: 2,
     },
-    revisions: { ids: [] },
-    freshness: { status: "fresh", earliestStaleAfter: null },
-    evidence: { sourceCount: 0, sourceIds: [], oldestVerifiedAt: null },
+    revisions: { ids: ["revision-gb-general"] },
+    freshness: {
+      status: "incomplete",
+      earliestStaleAfter: "2026-10-01T00:00:00.000Z",
+    },
+    evidence: {
+      sourceCount: 1,
+      sourceIds: ["source_gb"],
+      oldestVerifiedAt: "2026-06-15",
+    },
     coverage: {
-      requested: 0,
-      covered: 0,
-      unknown: 0,
-      complete: true,
+      requested: 2,
+      covered: 1,
+      unknown: 1,
+      complete: false,
       items: [],
     },
   },
@@ -108,6 +212,13 @@ describe("TripPlanner", () => {
       screen.getByRole("button", { name: "Get route guidance" }),
     );
     await screen.findByText("Overall result");
+    expect(screen.getByText("General route guidance")).toBeInTheDocument();
+    expect(
+      screen.getByText("Medication category guidance"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Do not treat missing guidance as permission/),
+    ).toBeInTheDocument();
 
     const guidanceRequest = requests.find(
       ({ url }) => url === "/api/guidance/evaluate",

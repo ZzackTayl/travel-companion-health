@@ -110,7 +110,7 @@ export interface PublicGuidanceRequirement {
   type: PublicGuidanceRecord["jurisdictionType"];
   code: string;
   medicationCategorySlug: string | null;
-  guidanceType: GuidanceType;
+  guidanceType: GuidanceType | null;
 }
 
 export interface LaunchCoverageRequirement {

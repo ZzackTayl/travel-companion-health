@@ -385,6 +385,8 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  matched_count integer;
 BEGIN
   IF jsonb_typeof(p_requirements) IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'requirements must be a JSON array';
@@ -399,7 +401,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'public guidance evaluation is disabled';
   END IF;
-  IF jsonb_array_length(p_requirements) NOT BETWEEN 1 AND 250 THEN
+  IF jsonb_array_length(p_requirements) NOT BETWEEN 1 AND 400 THEN
     RAISE EXCEPTION 'guidance requirement count is invalid';
   END IF;
   IF EXISTS (
@@ -410,11 +412,16 @@ BEGIN
       OR requested ->> 'type' NOT IN ('country', 'airport_authority')
       OR coalesce(requested ->> 'code', '') !~ '^[A-Za-z0-9]{2,8}$'
       OR NOT (requested ? 'guidanceType')
-      OR requested ->> 'guidanceType' NOT IN (
-        'general', 'packaging', 'documentation', 'quantity_limit',
-        'prohibited', 'restricted', 'screening', 'declaration',
-        'transit', 'airline_carriage'
+      OR (
+        jsonb_typeof(requested -> 'guidanceType') = 'string'
+        AND requested ->> 'guidanceType' NOT IN (
+          'general', 'packaging', 'documentation', 'quantity_limit',
+          'prohibited', 'restricted', 'screening', 'declaration',
+          'transit', 'airline_carriage'
+        )
       )
+      OR jsonb_typeof(requested -> 'guidanceType')
+        NOT IN ('string', 'null')
       OR NOT (requested ? 'medicationCategorySlug')
       OR (
         jsonb_typeof(requested -> 'medicationCategorySlug') = 'string'
@@ -427,6 +434,26 @@ BEGIN
     RAISE EXCEPTION 'guidance requirement is invalid';
   END IF;
 
+  SELECT count(*)
+  INTO matched_count
+  FROM public_guidance_records guidance
+  WHERE EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(p_requirements) requested
+    WHERE requested ->> 'type' = guidance.jurisdiction_type
+      AND upper(requested ->> 'code') = upper(guidance.jurisdiction_code)
+      AND (
+        requested ->> 'guidanceType' IS NULL
+        OR requested ->> 'guidanceType' = guidance.guidance_type::text
+      )
+      AND requested ->> 'medicationCategorySlug'
+        IS NOT DISTINCT FROM guidance.medication_category_slug
+  );
+
+  IF matched_count > 1000 THEN
+    RAISE EXCEPTION 'guidance response exceeds the safe record limit';
+  END IF;
+
   RETURN QUERY
   SELECT guidance.*
   FROM public_guidance_records guidance
@@ -435,7 +462,10 @@ BEGIN
     FROM jsonb_array_elements(p_requirements) requested
     WHERE requested ->> 'type' = guidance.jurisdiction_type
       AND upper(requested ->> 'code') = upper(guidance.jurisdiction_code)
-      AND requested ->> 'guidanceType' = guidance.guidance_type::text
+      AND (
+        requested ->> 'guidanceType' IS NULL
+        OR requested ->> 'guidanceType' = guidance.guidance_type::text
+      )
       AND requested ->> 'medicationCategorySlug'
         IS NOT DISTINCT FROM guidance.medication_category_slug
   );

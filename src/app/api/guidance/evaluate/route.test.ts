@@ -132,7 +132,20 @@ const ineligibleRecords: Array<
 
 describe("POST /api/guidance/evaluate", () => {
   it("returns governed revision, freshness, evidence, and coverage metadata", async () => {
-    const response = await handler([guidance()])(
+    const injectableDocumentation = guidance({
+      id: "revision-injectable-documentation",
+      medicationCategoryId: "category-injectable",
+      medicationCategorySlug: "injectable",
+      guidanceType: "documentation",
+      sources: [
+        {
+          ...source(),
+          id: "source-injectable",
+          guidanceRecordId: "revision-injectable-documentation",
+        },
+      ],
+    });
+    const response = await handler([guidance(), injectableDocumentation])(
       request({
         routeStopIds: ["airport_jfk", "airport_lhr"],
         departureDate: "2026-05-12",
@@ -142,7 +155,8 @@ describe("POST /api/guidance/evaluate", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    const body = await response.json();
+    expect(body).toMatchObject({
       overallRisk: "unknown",
       durationDays: 11,
       metadata: {
@@ -151,14 +165,16 @@ describe("POST /api/guidance/evaluate", () => {
           evaluatedAt: now.toISOString(),
           contractVersion: 2,
         },
-        revisions: { ids: ["revision-valid"] },
+        revisions: {
+          ids: ["revision-valid", "revision-injectable-documentation"],
+        },
         freshness: {
           status: "incomplete",
           earliestStaleAfter: "2026-10-01T00:00:00.000Z",
         },
         evidence: {
-          sourceCount: 1,
-          sourceIds: ["source-valid"],
+          sourceCount: 2,
+          sourceIds: ["source-valid", "source-injectable"],
           oldestVerifiedAt: "2026-07-20T00:00:00.000Z",
         },
         coverage: {
@@ -167,6 +183,34 @@ describe("POST /api/guidance/evaluate", () => {
       },
     });
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(
+      body.jurisdictions.find(
+        ({ jurisdictionId }: { jurisdictionId: string }) =>
+          jurisdictionId === "country_us",
+      ),
+    ).toMatchObject({
+      riskLabel: "unknown",
+      generalGuidance: expect.arrayContaining([
+        expect.objectContaining({
+          medicationCategory: null,
+          confidence: "official_verified",
+          isFallback: false,
+        }),
+      ]),
+      categoryGuidance: expect.arrayContaining([
+        expect.objectContaining({
+          medicationCategory: "injectable",
+          guidanceType: "restricted",
+          riskLabel: "unknown",
+          isFallback: true,
+        }),
+        expect.objectContaining({
+          medicationCategory: "injectable",
+          guidanceType: "documentation",
+          isFallback: false,
+        }),
+      ]),
+    });
   });
 
   it("rejects medicine names and unknown categories", async () => {
@@ -260,7 +304,8 @@ describe("POST /api/guidance/evaluate", () => {
     );
     const body = await response.json();
     const scope = body.metadata.coverage.items.find(
-      ({ id }: { id: string }) => id === "airport_authority:JFK:transit:all",
+      ({ id }: { id: string }) =>
+        id === "airport_authority:JFK:transit:all:transit",
     );
 
     expect(response.status).toBe(200);
@@ -282,7 +327,7 @@ describe("POST /api/guidance/evaluate", () => {
       );
       const body = await response.json();
       const scope = body.metadata.coverage.items.find(
-        ({ id }: { id: string }) => id === "country:US:general:all",
+        ({ id }: { id: string }) => id === "country:US:general:all:origin",
       );
 
       expect(response.status).toBe(200);
