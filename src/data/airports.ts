@@ -52,6 +52,16 @@ export const airports: Airport[] = [
     regionCode: "US-IL",
   },
   {
+    id: "airport_sfo",
+    iataCode: "SFO",
+    icaoCode: "KSFO",
+    name: "San Francisco International Airport",
+    city: "San Francisco",
+    countryCode: "US",
+    countryName: "United States",
+    regionCode: "US-CA",
+  },
+  {
     id: "airport_lhr",
     iataCode: "LHR",
     icaoCode: "EGLL",
@@ -113,6 +123,15 @@ export const airports: Airport[] = [
     city: "Paris",
     countryCode: "FR",
     countryName: "France",
+  },
+  {
+    id: "airport_fco",
+    iataCode: "FCO",
+    icaoCode: "LIRF",
+    name: "Rome Fiumicino Airport",
+    city: "Rome",
+    countryCode: "IT",
+    countryName: "Italy",
   },
   {
     id: "airport_fra",

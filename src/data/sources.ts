@@ -14,7 +14,7 @@ export const sourceRecords: SourceReference[] = [
     title: "TSA: Disabilities and medical conditions",
     url: "https://www.tsa.gov/travel/tsa-cares/disabilities-and-medical-conditions",
     sourceType: "aviation_authority",
-    qualityTier: 1,
+    qualityTier: 2,
     lastVerifiedAt: "2026-06-15",
   },
   {
@@ -142,7 +142,7 @@ export const sourceRecords: SourceReference[] = [
     title: "Heathrow: Security and baggage",
     url: "https://www.heathrow.com/at-the-airport/security-and-baggage",
     sourceType: "airport",
-    qualityTier: 1,
+    qualityTier: 2,
     lastVerifiedAt: "2026-06-15",
   },
   {
@@ -150,7 +150,7 @@ export const sourceRecords: SourceReference[] = [
     title: "Dubai Airports: Baggage rules",
     url: "https://www.dubaiairports.ae/before-you-fly/baggage",
     sourceType: "airport",
-    qualityTier: 1,
+    qualityTier: 2,
     lastVerifiedAt: "2026-06-15",
   },
 ];

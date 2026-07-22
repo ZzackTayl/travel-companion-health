@@ -26,4 +26,14 @@ describe("GET /api/airports/search", () => {
     expect(emptyResponse.status).toBe(400);
     expect(limitResponse.status).toBe(400);
   });
+
+  it("resolves launch airport codes without unrelated substring matches", async () => {
+    const sfo = GET(new Request("http://localhost/api/airports/search?q=SFO"));
+    const unknown = GET(
+      new Request("http://localhost/api/airports/search?q=ZZZ"),
+    );
+
+    expect((await sfo.json()).results[0].iataCode).toBe("SFO");
+    expect((await unknown.json()).results).toEqual([]);
+  });
 });

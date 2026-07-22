@@ -1,7 +1,17 @@
-import type {
-  GuidanceRecord,
-  LaunchCoverageRequirement,
-  SourceRecord,
+import {
+  confidenceLevels,
+  contentStatuses,
+  guidanceTypes,
+  riskLabels,
+  sourceTypes,
+  type Confidence,
+  type ContentStatus,
+  type GuidanceType,
+  type GuidanceRecord,
+  type LaunchCoverageRequirement,
+  type RiskLabel,
+  type SourceRecord,
+  type SourceType,
 } from "./types";
 import type { GuidanceRepository } from "./service";
 
@@ -14,29 +24,77 @@ interface DatabaseRepositoryConfig {
 type DatabaseRow = Record<string, unknown>;
 
 function asDate(value: unknown) {
-  return typeof value === "string" ? new Date(value) : null;
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") throw new Error("Expected a date string");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("Invalid database date");
+  return date;
+}
+
+function requiredString(value: unknown, field: string) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Invalid database field: ${field}`);
+  }
+  return value;
+}
+
+function requiredBoolean(value: unknown, field: string) {
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid database field: ${field}`);
+  }
+  return value;
+}
+
+function enumValue<T extends string>(
+  value: unknown,
+  values: readonly T[],
+  field: string,
+) {
+  if (typeof value !== "string" || !values.includes(value as T)) {
+    throw new Error(`Invalid database field: ${field}`);
+  }
+  return value as T;
 }
 
 function mapSource(row: DatabaseRow, guidanceRecordId: string): SourceRecord {
   return {
-    id: String(row.id),
+    id: requiredString(row.id, "source.id"),
     guidanceRecordId,
-    url: String(row.url),
-    title: String(row.title),
-    sourceType: (row.sourceType ??
-      row.source_type) as SourceRecord["sourceType"],
-    qualityTier: Number(
-      row.qualityTier ?? row.quality_tier,
-    ) as SourceRecord["qualityTier"],
-    excerpt: String(row.excerpt),
-    accessedAt: asDate(row.accessedAt ?? row.accessed_at) ?? new Date(0),
+    url: requiredString(row.url, "source.url"),
+    title: requiredString(row.title, "source.title"),
+    sourceType: enumValue<SourceType>(
+      row.sourceType ?? row.source_type,
+      sourceTypes,
+      "source.source_type",
+    ),
+    qualityTier: (() => {
+      const value = row.qualityTier ?? row.quality_tier;
+      if (
+        typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < 1 ||
+        value > 4
+      ) {
+        throw new Error("Invalid database field: source.quality_tier");
+      }
+      return value as SourceRecord["qualityTier"];
+    })(),
+    excerpt: requiredString(row.excerpt, "source.excerpt"),
+    accessedAt:
+      asDate(row.accessedAt ?? row.accessed_at) ??
+      (() => {
+        throw new Error("Invalid database field: source.accessed_at");
+      })(),
     lastVerifiedAt: asDate(row.lastVerifiedAt ?? row.last_verified_at),
-    supportsSummary: Boolean(row.supportsSummary ?? row.supports_summary),
+    supportsSummary: requiredBoolean(
+      row.supportsSummary ?? row.supports_summary,
+      "source.supports_summary",
+    ),
   };
 }
 
 function mapGuidance(row: DatabaseRow): GuidanceRecord {
-  const id = String(row.id);
+  const id = requiredString(row.id, "guidance.id");
   const sourceRows = (
     Array.isArray(row.sources)
       ? row.sources
@@ -47,21 +105,43 @@ function mapGuidance(row: DatabaseRow): GuidanceRecord {
 
   return {
     id,
-    jurisdictionId: String(row.jurisdiction_id),
+    jurisdictionId: requiredString(
+      row.jurisdiction_id,
+      "guidance.jurisdiction_id",
+    ),
     medicationCategoryId:
       typeof row.medication_category_id === "string"
         ? row.medication_category_id
         : null,
-    guidanceType: row.guidance_type as GuidanceRecord["guidanceType"],
-    riskLabel: row.risk_label as GuidanceRecord["riskLabel"],
-    title: String(row.title),
-    summary: String(row.summary),
-    actionText: String(row.action_text),
-    appliesToTransit: Boolean(row.applies_to_transit),
+    guidanceType: enumValue<GuidanceType>(
+      row.guidance_type,
+      guidanceTypes,
+      "guidance.guidance_type",
+    ),
+    riskLabel: enumValue<RiskLabel>(
+      row.risk_label,
+      riskLabels,
+      "guidance.risk_label",
+    ),
+    title: requiredString(row.title, "guidance.title"),
+    summary: requiredString(row.summary, "guidance.summary"),
+    actionText: requiredString(row.action_text, "guidance.action_text"),
+    appliesToTransit: requiredBoolean(
+      row.applies_to_transit,
+      "guidance.applies_to_transit",
+    ),
     effectiveFrom: asDate(row.effective_from),
     effectiveTo: asDate(row.effective_to),
-    status: row.status as GuidanceRecord["status"],
-    confidence: row.confidence as GuidanceRecord["confidence"],
+    status: enumValue<ContentStatus>(
+      row.status,
+      contentStatuses,
+      "guidance.status",
+    ),
+    confidence: enumValue<Confidence>(
+      row.confidence,
+      confidenceLevels,
+      "guidance.confidence",
+    ),
     lastReviewedAt: asDate(row.last_reviewed_at),
     staleAfter: asDate(row.stale_after),
     reviewerId: typeof row.reviewer_id === "string" ? row.reviewer_id : null,
@@ -74,8 +154,20 @@ function mapGuidance(row: DatabaseRow): GuidanceRecord {
       typeof row.lower_tier_evidence_reason === "string"
         ? row.lower_tier_evidence_reason
         : null,
-    reviewedForPublication: Boolean(row.reviewed_for_publication),
-    lowerTierEvidenceApproved: Boolean(row.lower_tier_evidence_approved),
+    reviewedForPublication:
+      row.reviewed_for_publication === undefined
+        ? undefined
+        : requiredBoolean(
+            row.reviewed_for_publication,
+            "guidance.reviewed_for_publication",
+          ),
+    lowerTierEvidenceApproved:
+      row.lower_tier_evidence_approved === undefined
+        ? undefined
+        : requiredBoolean(
+            row.lower_tier_evidence_approved,
+            "guidance.lower_tier_evidence_approved",
+          ),
     unresolvedQuestions: Array.isArray(row.unresolved_questions)
       ? row.unresolved_questions.map(String)
       : [],
@@ -85,16 +177,25 @@ function mapGuidance(row: DatabaseRow): GuidanceRecord {
 
 function mapRequirement(row: DatabaseRow): LaunchCoverageRequirement {
   return {
-    id: String(row.id),
-    jurisdictionId: String(row.jurisdiction_id),
+    id: requiredString(row.id, "coverage.id"),
+    jurisdictionId: requiredString(
+      row.jurisdiction_id,
+      "coverage.jurisdiction_id",
+    ),
     medicationCategoryId:
       typeof row.medication_category_id === "string"
         ? row.medication_category_id
         : null,
-    guidanceType:
-      row.guidance_type as LaunchCoverageRequirement["guidanceType"],
-    label: String(row.label),
-    requiredAtLaunch: Boolean(row.required_at_launch),
+    guidanceType: enumValue<GuidanceType>(
+      row.guidance_type,
+      guidanceTypes,
+      "coverage.guidance_type",
+    ),
+    label: requiredString(row.label, "coverage.label"),
+    requiredAtLaunch: requiredBoolean(
+      row.required_at_launch,
+      "coverage.required_at_launch",
+    ),
   };
 }
 
@@ -127,6 +228,13 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
   private readonly baseUrl: string;
 
   constructor(private readonly config: DatabaseRepositoryConfig) {
+    const url = new URL(config.baseUrl);
+    if (
+      url.protocol !== "https:" &&
+      !["localhost", "127.0.0.1"].includes(url.hostname)
+    ) {
+      throw new Error("Guidance database URL must use HTTPS");
+    }
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
   }
 
@@ -145,12 +253,14 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
     const headers = new Headers(options.headers);
     headers.set("apikey", this.config.publicKey);
     headers.set("Authorization", `Bearer ${accessToken}`);
-    headers.set("Content-Type", "application/json");
+    headers.set("Accept", "application/json");
+    if (options.body) headers.set("Content-Type", "application/json");
 
     const response = await fetch(`${this.baseUrl}/rest/v1/${path}`, {
       ...options,
       headers,
       cache: "no-store",
+      signal: options.signal ?? AbortSignal.timeout(5_000),
     });
 
     if (!response.ok) {
@@ -158,6 +268,11 @@ export class DatabaseGuidanceRepository implements GuidanceRepository {
     }
 
     if (response.status === 204) return null;
+    if (
+      !(response.headers.get("content-type") ?? "").includes("application/json")
+    ) {
+      throw new Error("Guidance database returned an unreadable response");
+    }
     return response.json();
   }
 

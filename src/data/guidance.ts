@@ -10,6 +10,9 @@ export interface GuidanceRecord {
   status: "draft" | "reviewed" | "published" | "stale" | "archived";
   confidence: Confidence;
   lastReviewedAt: string;
+  staleAfter: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
   sourceIds: string[];
 }
 
@@ -43,8 +46,9 @@ export const guidanceRecords: GuidanceRecord[] = [
         "Keep medicines in original labeled packaging and carry prescription documentation.",
       appliesToTransit: true,
       status: "published",
-      confidence: "official_verified",
+      confidence: "high",
       lastReviewedAt: "2026-06-15",
+      staleAfter: "2026-12-12",
       sourceIds: [sourceId],
     }),
   ),
@@ -57,8 +61,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Check the official controlled-drug rules and required evidence before departure.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_gb"],
   },
   {
@@ -70,8 +75,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Do not travel until you have checked the official controlled-medicine requirements and any approval process.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-08-14",
     sourceIds: ["source_ae"],
   },
   {
@@ -83,8 +89,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Confirm import limits and any advance application with Japan's health authority.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_jp"],
   },
   {
@@ -96,8 +103,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Use the official HSA checker and complete any required approval before travel.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_sg"],
   },
   {
@@ -111,6 +119,7 @@ export const guidanceRecords: GuidanceRecord[] = [
     status: "published",
     confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_us_tsa"],
   },
   {
@@ -122,8 +131,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Review Heathrow's current security process for essential medical liquids before travel.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_lhr"],
   },
   {
@@ -135,8 +145,9 @@ export const guidanceRecords: GuidanceRecord[] = [
       "Review Dubai Airports' current baggage rules for medicines and medical liquids.",
     appliesToTransit: true,
     status: "published",
-    confidence: "official_verified",
+    confidence: "high",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: ["source_dxb"],
   },
   {
@@ -149,6 +160,7 @@ export const guidanceRecords: GuidanceRecord[] = [
     status: "draft",
     confidence: "low",
     lastReviewedAt: "2026-06-15",
+    staleAfter: "2026-12-12",
     sourceIds: [],
   },
 ];

@@ -1,7 +1,9 @@
 # Governed guidance database
 
-Apply `migrations/001_governed_guidance.sql` to PostgreSQL before applying
-`seeds/launch_coverage.sql`.
+Apply every file in `migrations/` in numeric order before applying
+`seeds/launch_coverage.sql`. Migration `002_security_hardening.sql` repairs the
+authenticated audit-trigger boundary and freezes reviewed candidates before
+publication.
 
 The migration provides:
 

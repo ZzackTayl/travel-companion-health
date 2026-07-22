@@ -36,6 +36,14 @@ const route: ResolvedRoute = {
 };
 
 const evaluation: GuidanceEvaluation = {
+  contractVersion: 2,
+  generatedAt: "2026-07-22T00:00:00.000Z",
+  refreshAfter: "2026-12-12",
+  completeness: "partial",
+  dataProvenance: {
+    mode: "prototype_fixture",
+    productionEligible: false,
+  },
   overallRisk: "check_documentation",
   durationDays: null,
   durationWarning: null,
@@ -73,9 +81,9 @@ describe("TripPlanner", () => {
       "Airport code, airport, city, or country",
     );
     await user.type(search, "JFK");
-    await user.click(await screen.findByRole("button", { name: /JFK/ }));
+    await user.click(await screen.findByRole("option", { name: /JFK/ }));
     await user.type(search, "LHR");
-    await user.click(await screen.findByRole("button", { name: /LHR/ }));
+    await user.click(await screen.findByRole("option", { name: /LHR/ }));
 
     await user.type(
       screen.getByLabelText("Medicine name (saved locally only)"),
@@ -90,7 +98,7 @@ describe("TripPlanner", () => {
     await user.click(
       screen.getByRole("button", { name: "Get route guidance" }),
     );
-    await screen.findByText("Overall result");
+    await screen.findByText(/Prototype data/);
 
     const guidanceRequest = requests.find(
       ({ url }) => url === "/api/guidance/evaluate",

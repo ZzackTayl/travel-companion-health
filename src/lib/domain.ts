@@ -81,12 +81,22 @@ export interface SourceReference {
 
 export interface JurisdictionGuidance {
   jurisdictionId: string;
+  jurisdictionType: "country" | "airport_authority";
   name: string;
   countryCode: string;
   airportCodes: string[];
   roles: RouteRole[];
   transitOnly: boolean;
   riskLabel: RiskLabel;
+  coverageStatus: "covered" | "partial" | "unknown";
+  coverageGaps: Array<{
+    medicationCategory: MedicationCategory | null;
+    reason:
+      | "missing_general_guidance"
+      | "missing_category_guidance"
+      | "missing_airport_guidance"
+      | "not_verified_for_travel_window";
+  }>;
   actions: string[];
   confidence: Confidence;
   lastReviewedAt: string;
@@ -94,6 +104,14 @@ export interface JurisdictionGuidance {
 }
 
 export interface GuidanceEvaluation {
+  contractVersion: 2;
+  generatedAt: string;
+  refreshAfter: string | null;
+  completeness: "complete" | "partial" | "unavailable";
+  dataProvenance: {
+    mode: "prototype_fixture" | "governed_database";
+    productionEligible: boolean;
+  };
   overallRisk: RiskLabel;
   durationDays: number | null;
   durationWarning: string | null;

@@ -1,6 +1,6 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseDate(value: string) {
+export function parseDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const timestamp = Date.UTC(
@@ -19,6 +19,10 @@ function parseDate(value: string) {
   return timestamp;
 }
 
+export function isValidDate(value: string) {
+  return parseDate(value) !== null;
+}
+
 export function getTripDuration(departureDate?: string, returnDate?: string) {
   if (!departureDate || !returnDate) return null;
   const departure = parseDate(departureDate);
@@ -30,6 +34,19 @@ export function getTripDuration(departureDate?: string, returnDate?: string) {
     throw new Error("Return date must be on or after departure date");
   }
   return Math.floor((returning - departure) / DAY_MS) + 1;
+}
+
+export function getTravelReferenceDate(
+  departureDate: string | undefined,
+  returnDate: string | undefined,
+  now = new Date(),
+) {
+  const requestedDate = returnDate ?? departureDate;
+  if (!requestedDate) return now.toISOString().slice(0, 10);
+  if (!isValidDate(requestedDate)) {
+    throw new Error("Dates must use a valid YYYY-MM-DD format");
+  }
+  return requestedDate;
 }
 
 export function getDurationWarning(durationDays: number | null) {

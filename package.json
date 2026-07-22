@@ -2,12 +2,22 @@
   "name": "travel-companion-health",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=20.19.0 <25",
+    "npm": ">=10 <12"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test": "node --test tests/*.test.mjs"
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test:unit": "vitest run",
+    "test:governance": "node --test tests/*.test.mjs",
+    "test": "npm run test:unit && npm run test:governance",
+    "validate": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "idb": "^8.0.3",

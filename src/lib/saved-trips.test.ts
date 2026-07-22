@@ -11,6 +11,14 @@ import {
 import type { GuidanceEvaluation } from "@/lib/domain";
 
 const guidance = {
+  contractVersion: 2,
+  generatedAt: "2026-07-22T00:00:00.000Z",
+  refreshAfter: "2026-12-12",
+  completeness: "partial",
+  dataProvenance: {
+    mode: "prototype_fixture",
+    productionEligible: false,
+  },
   overallRisk: "likely_ok",
   durationDays: null,
   durationWarning: null,

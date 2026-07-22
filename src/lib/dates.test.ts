@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getDurationWarning, getTripDuration } from "@/lib/dates";
+import {
+  getDurationWarning,
+  getTravelReferenceDate,
+  getTripDuration,
+  isValidDate,
+} from "@/lib/dates";
 
 describe("trip duration", () => {
   it("counts both travel dates", () => {
@@ -22,5 +27,20 @@ describe("trip duration", () => {
   it("warns only for trips longer than 30 days", () => {
     expect(getDurationWarning(30)).toBeNull();
     expect(getDurationWarning(31)).toMatch(/quantity-limit verification/);
+  });
+
+  it("validates standalone calendar dates", () => {
+    expect(isValidDate("2028-02-29")).toBe(true);
+    expect(isValidDate("2026-02-30")).toBe(false);
+  });
+
+  it("uses the end of the known trip as the guidance reference date", () => {
+    expect(
+      getTravelReferenceDate(
+        "2026-05-12",
+        "2026-05-22",
+        new Date("2026-01-01T00:00:00.000Z"),
+      ),
+    ).toBe("2026-05-22");
   });
 });

@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Travel Companion Health
 
-## Getting Started
+Travel Companion Health is a privacy-first web application for preparing to
+travel with medicines. Users can build an airport route, add optional
+medication categories, review explicit guidance coverage gaps, and copy, print,
+or save a local travel card.
 
-First, run the development server:
+## Safety status
+
+The checked-in guidance records are development fixtures. They are visibly
+labeled as prototype data and are blocked in production. Production deployment
+requires the governed PostgreSQL content path, reviewed evidence, freshness
+jobs, and complete launch coverage.
+
+The application is informational and is not legal or medical advice.
+
+## Requirements
+
+- Node.js 24.13.0
+- npm 11.6.2
+- PostgreSQL 15 or newer for database migrations
+
+Use the versions in `.nvmrc` or `.node-version`.
+
+## Install and run locally
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Validation
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-## Learn More
+Run the complete local gate with:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run validate
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`npm test` runs both the Vitest application suite and the Node governance
+suite. A passing governance suite alone is not a release signal.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database
 
-## Deploy on Vercel
+Apply every SQL file in `database/migrations/` in numeric order, then apply
+`database/seeds/launch_coverage.sql`. See `database/README.md` for the
+publication and stale-content model.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The seed creates coverage requirements, not factual guidance. Missing coverage
+must remain visible and resolve to an unknown state until a reviewer publishes
+evidence-backed content.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Privacy boundary
+
+- Raw medicine names remain in the browser.
+- Guidance requests send airport IDs, optional dates, and normalized category
+  flags.
+- Saved trips are stored in IndexedDB on the current browser profile.
+- Travel card copy and print output omit raw medicine names.
+- Users can delete individual saved trips or clear all saved trips.
+
+## Production prerequisites
+
+Before public beta:
+
+1. Connect the public API to the governed database projection.
+2. Publish authoritative reviewed content for every enabled launch requirement.
+3. Configure managed admin authentication, MFA, and role-based authorization.
+4. Configure distributed rate limiting, request timeouts, security headers,
+   privacy-safe telemetry, backups, and restore/rollback procedures.
+5. Run PostgreSQL role/RLS integration tests, browser E2E tests, automated
+   accessibility checks, and manual screen-reader/zoom/print checks.
+6. Verify official source contents and dates through the documented review
+   workflow.
+
+Product, QA, security, technical, and research documentation is in `docs/`.

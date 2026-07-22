@@ -1,13 +1,20 @@
-import { resolveRoute } from "@/lib/routes";
+import { resolveRoute, RouteResolutionError } from "@/lib/routes";
 import { routeRequestSchema, validationError } from "@/lib/validation";
+import { jsonNoStore, readJsonBody, RequestBodyError } from "@/lib/http";
 
 export async function POST(request: Request) {
   let payload: unknown;
   try {
-    payload = await request.json();
-  } catch {
-    return Response.json(
-      { error: "Request body must be valid JSON" },
+    payload = await readJsonBody(request);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return jsonNoStore(
+        { error: error.message, code: error.code },
+        { status: error.status },
+      );
+    }
+    return jsonNoStore(
+      { error: "Unable to read request body", code: "REQUEST_READ_FAILED" },
       { status: 400 },
     );
   }
@@ -16,14 +23,20 @@ export async function POST(request: Request) {
   if (!parsed.success) return validationError(parsed.error);
 
   try {
-    return Response.json(resolveRoute(parsed.data.routeStopIds));
+    return jsonNoStore(resolveRoute(parsed.data.routeStopIds));
   } catch (error) {
-    return Response.json(
+    if (error instanceof RouteResolutionError) {
+      return jsonNoStore(
+        { error: error.message, code: error.code },
+        { status: 422 },
+      );
+    }
+    return jsonNoStore(
       {
-        error:
-          error instanceof Error ? error.message : "Unable to resolve route",
+        error: "Unable to resolve route",
+        code: "ROUTE_RESOLUTION_FAILED",
       },
-      { status: 422 },
+      { status: 500 },
     );
   }
 }

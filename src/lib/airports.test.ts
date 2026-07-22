@@ -29,4 +29,13 @@ describe("searchAirports", () => {
   it("honors the result limit", () => {
     expect(searchAirports("United States", 2)).toHaveLength(2);
   });
+
+  it("does not treat an unknown IATA-like code as a name substring", () => {
+    expect(searchAirports("ZZZ")).toEqual([]);
+  });
+
+  it("includes every airport in the documented launch routes", () => {
+    expect(searchAirports("SFO")[0]?.iataCode).toBe("SFO");
+    expect(searchAirports("FCO")[0]?.iataCode).toBe("FCO");
+  });
 });

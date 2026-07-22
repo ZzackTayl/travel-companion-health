@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/guidance/evaluate/route";
 
 function request(body: unknown) {
@@ -8,6 +8,10 @@ function request(body: unknown) {
     body: JSON.stringify(body),
   });
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("POST /api/guidance/evaluate", () => {
   it("accepts only normalized, privacy-safe inputs", async () => {
@@ -22,8 +26,13 @@ describe("POST /api/guidance/evaluate", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      overallRisk: "check_documentation",
+      contractVersion: 2,
+      completeness: "partial",
       durationDays: 11,
+      dataProvenance: {
+        mode: "prototype_fixture",
+        productionEligible: false,
+      },
     });
   });
 
@@ -44,5 +53,52 @@ describe("POST /api/guidance/evaluate", () => {
 
     expect(medicineNameResponse.status).toBe(400);
     expect(categoryResponse.status).toBe(400);
+  });
+
+  it("rejects invalid travel dates before evaluation", async () => {
+    const response = await POST(
+      request({
+        routeStopIds: ["airport_jfk", "airport_lhr"],
+        departureDate: "2026-05-22",
+        returnDate: "2026-05-12",
+        medicationCategories: [],
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.issues).toContainEqual(
+      expect.objectContaining({ path: "returnDate" }),
+    );
+  });
+
+  it("rejects oversized request bodies", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/guidance/evaluate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ padding: "x".repeat(17 * 1024) }),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({
+      code: "PAYLOAD_TOO_LARGE",
+    });
+  });
+
+  it("fails closed instead of serving fixtures in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = await POST(
+      request({
+        routeStopIds: ["airport_jfk", "airport_lhr"],
+        medicationCategories: [],
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "GUIDANCE_DATA_UNAVAILABLE",
+    });
   });
 });

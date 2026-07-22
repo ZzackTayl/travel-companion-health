@@ -25,7 +25,7 @@ VALUES
     'Is this medicine controlled in your home country or destination?'
   ),
   (
-    'stimulant',
+    'stimulant_adhd',
     'Stimulant',
     'Prescription stimulant medicine.',
     'high',
@@ -39,14 +39,14 @@ VALUES
     'Does this medicine contain an opioid?'
   ),
   (
-    'sedative',
+    'sedative_anxiety',
     'Sedative',
     'Sedative or anti-anxiety medicine.',
     'high',
     'Is this a sedative or anti-anxiety medicine?'
   ),
   (
-    'sleep_medicine',
+    'sleep_medication',
     'Sleep medicine',
     'Medicine used to support sleep.',
     'high',
@@ -74,7 +74,7 @@ VALUES
     'Will you carry needles, syringes, or an injector?'
   ),
   (
-    'liquid',
+    'liquid_over_100ml',
     'Liquid medicine',
     'Liquid, gel, or aerosol medicine that may need screening.',
     'medium',
@@ -100,6 +100,27 @@ VALUES
     'Medicine whose travel-risk category has not been identified.',
     'unknown',
     'Not sure which category applies?'
+  ),
+  (
+    'prescription',
+    'Prescription medicine',
+    'Medicine supplied with a prescription.',
+    'medium',
+    'Is this a prescription medicine?'
+  ),
+  (
+    'over_the_counter',
+    'Over-the-counter medicine',
+    'Medicine supplied without a prescription.',
+    'low',
+    'Is this an over-the-counter medicine?'
+  ),
+  (
+    'needles_or_sharps',
+    'Needles or sharps',
+    'Needles, lancets, syringes, or other medical sharps.',
+    'medium',
+    'Will you carry needles or other medical sharps?'
   )
 ON CONFLICT (slug) DO NOTHING;
 
@@ -182,17 +203,20 @@ WHERE jurisdiction.type = 'country'
   AND jurisdiction.code IN ('US', 'GB', 'AE', 'JP', 'FR', 'IT', 'CA')
   AND medication_category.slug IN (
     'controlled_substance',
-    'stimulant',
+    'stimulant_adhd',
     'opioid',
-    'sedative',
-    'sleep_medicine',
+    'sedative_anxiety',
+    'sleep_medication',
     'pseudoephedrine',
     'cannabis_derived',
     'injectable',
-    'liquid',
+    'liquid_over_100ml',
     'refrigerated',
     'medical_device',
-    'unknown'
+    'unknown',
+    'prescription',
+    'over_the_counter',
+    'needles_or_sharps'
   )
 ON CONFLICT (
   jurisdiction_id, medication_category_id, guidance_type

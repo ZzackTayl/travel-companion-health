@@ -39,4 +39,12 @@ describe("POST /api/routes/resolve", () => {
     expect(shortResponse.status).toBe(400);
     expect(unknownResponse.status).toBe(422);
   });
+
+  it("rejects adjacent duplicate stops", async () => {
+    const response = await POST(
+      request({ routeStopIds: ["airport_jfk", "airport_jfk"] }),
+    );
+
+    expect(response.status).toBe(400);
+  });
 });

@@ -1,6 +1,10 @@
 import { guidanceRecords } from "@/data/guidance";
 import { getSources, hasCompleteSourceEvidence } from "@/data/sources";
-import { getDurationWarning, getTripDuration } from "@/lib/dates";
+import {
+  getDurationWarning,
+  getTravelReferenceDate,
+  getTripDuration,
+} from "@/lib/dates";
 import type {
   Confidence,
   GuidanceEvaluation,
@@ -28,6 +32,7 @@ const confidenceWeight: Record<Confidence, number> = {
 };
 
 export function aggregateRisk(risks: RiskLabel[]): RiskLabel {
+  if (risks.length === 0) return "unknown";
   return risks.reduce<RiskLabel>(
     (highest, risk) =>
       riskWeight[risk] > riskWeight[highest] ? risk : highest,
@@ -45,70 +50,132 @@ function lowestConfidence(confidences: Confidence[]) {
   );
 }
 
+const unknownAction =
+  "Official guidance was not verified for this part of the route. Do not treat missing guidance as permission; check with the relevant government, customs, embassy, or airport authority before travel.";
+
+function appliesOnDate(
+  record: (typeof guidanceRecords)[number],
+  referenceDate: string,
+) {
+  return (
+    record.staleAfter > referenceDate &&
+    (!record.effectiveFrom || record.effectiveFrom <= referenceDate) &&
+    (!record.effectiveTo || record.effectiveTo >= referenceDate)
+  );
+}
+
 function evaluateJurisdiction(
   jurisdiction: ResolvedJurisdiction,
   categories: MedicationCategory[],
   durationWarning: string | null,
-): JurisdictionGuidance | null {
-  const records = guidanceRecords.filter(
+  travelReferenceDate: string,
+): JurisdictionGuidance {
+  const availableRecords = guidanceRecords.filter(
     (record) =>
       record.jurisdictionId === jurisdiction.id &&
       record.status === "published" &&
       Boolean(record.lastReviewedAt) &&
       hasCompleteSourceEvidence(record.sourceIds) &&
-      (!jurisdiction.transitOnly || record.appliesToTransit) &&
-      (record.medicationCategory === null ||
-        categories.includes(record.medicationCategory)),
+      (!jurisdiction.transitOnly || record.appliesToTransit),
   );
-
-  if (records.length === 0) {
-    if (jurisdiction.type === "airport_authority") return null;
-    return {
-      jurisdictionId: jurisdiction.id,
-      name: jurisdiction.name,
-      countryCode: jurisdiction.countryCode,
-      airportCodes: jurisdiction.airportCodes,
-      roles: jurisdiction.roles,
-      transitOnly: jurisdiction.transitOnly,
-      riskLabel: "unknown",
-      actions: ["Check current official requirements before departure."],
-      confidence: "unknown",
-      lastReviewedAt: "",
-      sources: [],
-    };
-  }
-
+  const records = availableRecords.filter((record) =>
+    appliesOnDate(record, travelReferenceDate),
+  );
+  const generalRecords = records.filter(
+    ({ medicationCategory }) => medicationCategory === null,
+  );
+  const requestedCategories = categories.filter(
+    (category) => category !== "unknown",
+  );
+  const categoryRecords = records.filter(
+    ({ medicationCategory }) =>
+      medicationCategory !== null &&
+      requestedCategories.includes(medicationCategory),
+  );
+  const missingCategories = requestedCategories.filter(
+    (category) =>
+      !categoryRecords.some(
+        ({ medicationCategory }) => medicationCategory === category,
+      ),
+  );
   const includesUnknownCategory = categories.includes("unknown");
-  const sourceIds = [...new Set(records.flatMap((record) => record.sourceIds))];
-  const actions = [...new Set(records.map((record) => record.actionText))];
-  if (includesUnknownCategory) {
-    actions.push(
-      "The medicine category is uncertain; verify it against current official requirements.",
+  const selectedRecords = [...generalRecords, ...categoryRecords];
+  const coverageGaps: JurisdictionGuidance["coverageGaps"] = [];
+
+  if (generalRecords.length === 0) {
+    const hadGeneralRecord = availableRecords.some(
+      ({ medicationCategory }) => medicationCategory === null,
     );
+    coverageGaps.push({
+      medicationCategory: null,
+      reason: hadGeneralRecord
+        ? "not_verified_for_travel_window"
+        : jurisdiction.type === "airport_authority"
+          ? "missing_airport_guidance"
+          : "missing_general_guidance",
+    });
   }
+
+  for (const category of missingCategories) {
+    const hadCategoryRecord = availableRecords.some(
+      ({ medicationCategory }) => medicationCategory === category,
+    );
+    coverageGaps.push({
+      medicationCategory: category,
+      reason: hadCategoryRecord
+        ? "not_verified_for_travel_window"
+        : jurisdiction.type === "airport_authority"
+          ? "missing_airport_guidance"
+          : "missing_category_guidance",
+    });
+  }
+
+  if (includesUnknownCategory) {
+    coverageGaps.push({
+      medicationCategory: "unknown",
+      reason: "missing_category_guidance",
+    });
+  }
+
+  const sourceIds = [
+    ...new Set(selectedRecords.flatMap((record) => record.sourceIds)),
+  ];
+  const actions = [
+    ...new Set(selectedRecords.map((record) => record.actionText)),
+  ];
+  if (coverageGaps.length > 0) actions.push(unknownAction);
   if (durationWarning && jurisdiction.type === "country") {
     actions.push(durationWarning);
   }
 
   return {
     jurisdictionId: jurisdiction.id,
+    jurisdictionType: jurisdiction.type,
     name: jurisdiction.name,
     countryCode: jurisdiction.countryCode,
     airportCodes: jurisdiction.airportCodes,
     roles: jurisdiction.roles,
     transitOnly: jurisdiction.transitOnly,
     riskLabel: aggregateRisk([
-      ...records.map((record) => record.riskLabel),
-      ...(includesUnknownCategory ? (["unknown"] as const) : []),
+      ...selectedRecords.map((record) => record.riskLabel),
+      ...(coverageGaps.length > 0 ? (["unknown"] as const) : []),
     ]),
+    coverageStatus:
+      selectedRecords.length === 0
+        ? "unknown"
+        : coverageGaps.length > 0
+          ? "partial"
+          : "covered",
+    coverageGaps,
     actions,
     confidence: lowestConfidence([
-      ...records.map((record) => record.confidence),
-      ...(includesUnknownCategory ? (["unknown"] as const) : []),
+      ...selectedRecords.map((record) => record.confidence),
+      ...(coverageGaps.length > 0 ? (["unknown"] as const) : []),
     ]),
-    lastReviewedAt: records
-      .map((record) => record.lastReviewedAt)
-      .sort((left, right) => left.localeCompare(right))[0],
+    lastReviewedAt:
+      selectedRecords
+        .map((record) => record.lastReviewedAt)
+        .sort((left, right) => left.localeCompare(right))[0] ?? "",
     sources: getSources(sourceIds),
   };
 }
@@ -122,20 +189,39 @@ interface EvaluateGuidanceInput {
 
 export function evaluateGuidance(
   input: EvaluateGuidanceInput,
+  now = new Date(),
 ): GuidanceEvaluation {
   const route = resolveRoute(input.routeStopIds);
   const durationDays = getTripDuration(input.departureDate, input.returnDate);
   const durationWarning = getDurationWarning(durationDays);
-  const jurisdictions = route.jurisdictions.flatMap((jurisdiction) => {
-    const result = evaluateJurisdiction(
+  const travelReferenceDate = getTravelReferenceDate(
+    input.departureDate,
+    input.returnDate,
+    now,
+  );
+  const jurisdictions = route.jurisdictions.map((jurisdiction) =>
+    evaluateJurisdiction(
       jurisdiction,
       input.medicationCategories,
       durationWarning,
-    );
-    return result ? [result] : [];
-  });
+      travelReferenceDate,
+    ),
+  );
+  const refreshAfter =
+    guidanceRecords
+      .map(({ staleAfter }) => staleAfter)
+      .filter((date) => date > now.toISOString().slice(0, 10))
+      .sort()[0] ?? null;
 
   return {
+    contractVersion: 2,
+    generatedAt: now.toISOString(),
+    refreshAfter,
+    completeness: "partial",
+    dataProvenance: {
+      mode: "prototype_fixture",
+      productionEligible: false,
+    },
     overallRisk: aggregateRisk(jurisdictions.map(({ riskLabel }) => riskLabel)),
     durationDays,
     durationWarning,
