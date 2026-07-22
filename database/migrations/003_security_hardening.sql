@@ -20,12 +20,6 @@ BEGIN
     NEW.confidence IS DISTINCT FROM OLD.confidence OR
     NEW.last_reviewed_at IS DISTINCT FROM OLD.last_reviewed_at OR
     NEW.stale_after IS DISTINCT FROM OLD.stale_after OR
-    NEW.lower_tier_evidence_approved_at IS DISTINCT FROM
-      OLD.lower_tier_evidence_approved_at OR
-    NEW.lower_tier_evidence_approved_by IS DISTINCT FROM
-      OLD.lower_tier_evidence_approved_by OR
-    NEW.lower_tier_evidence_reason IS DISTINCT FROM
-      OLD.lower_tier_evidence_reason OR
     NEW.unresolved_questions IS DISTINCT FROM OLD.unresolved_questions
   ) THEN
     RAISE EXCEPTION
@@ -39,36 +33,6 @@ CREATE TRIGGER immutable_reviewed_guidance
 BEFORE UPDATE ON guidance_records
 FOR EACH ROW EXECUTE FUNCTION protect_reviewed_guidance();
 
-ALTER TABLE source_records
-ADD COLUMN verified_by uuid REFERENCES admin_users(id);
-
-CREATE FUNCTION protect_source_verification()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-  actor uuid := public.request_actor_id();
-  actor_role admin_role;
-BEGIN
-  IF NEW.last_verified_at IS NOT NULL OR NEW.supports_summary THEN
-    SELECT role INTO actor_role FROM public.admin_users WHERE id = actor;
-    IF coalesce(actor_role NOT IN ('reviewer', 'admin'), true) THEN
-      RAISE EXCEPTION
-        'only an authenticated reviewer or admin can verify source evidence';
-    END IF;
-    NEW.verified_by = actor;
-  ELSE
-    NEW.verified_by = NULL;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER source_verification_guard
-BEFORE INSERT ON source_records
-FOR EACH ROW EXECUTE FUNCTION protect_source_verification();
-
 DROP POLICY guidance_admin_insert ON guidance_records;
 CREATE POLICY guidance_admin_insert ON guidance_records
 FOR INSERT WITH CHECK (
@@ -76,6 +40,5 @@ FOR INSERT WITH CHECK (
 );
 
 REVOKE ALL ON FUNCTION protect_reviewed_guidance() FROM PUBLIC;
-REVOKE ALL ON FUNCTION protect_source_verification() FROM PUBLIC;
 
 COMMIT;
