@@ -1,6 +1,6 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseDate(value: string) {
+export function parseDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const timestamp = Date.UTC(
@@ -17,6 +17,10 @@ function parseDate(value: string) {
     return null;
   }
   return timestamp;
+}
+
+export function isValidDate(value: string) {
+  return parseDate(value) !== null;
 }
 
 export function getTripDuration(departureDate?: string, returnDate?: string) {

@@ -1,8 +1,9 @@
 # Governed guidance database
 
-Apply `migrations/001_governed_guidance.sql` and
-`migrations/002_public_guidance_runtime.sql` to PostgreSQL, in order, before
-applying `seeds/launch_coverage.sql`.
+Apply `migrations/001_governed_guidance.sql`,
+`migrations/002_public_guidance_runtime.sql`, and
+`migrations/003_security_hardening.sql` to PostgreSQL, in order, before applying
+`seeds/launch_coverage.sql`.
 
 The migration provides:
 

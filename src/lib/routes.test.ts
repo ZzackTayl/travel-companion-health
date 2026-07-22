@@ -35,4 +35,18 @@ describe("resolveRoute", () => {
       "Unknown airport IDs: airport_missing",
     );
   });
+
+  it("rejects adjacent duplicate stops", () => {
+    expect(() => resolveRoute(["airport_jfk", "airport_jfk"])).toThrow(
+      "Adjacent route stops must be different airports",
+    );
+  });
+
+  it("allows a non-adjacent return to the origin", () => {
+    expect(
+      resolveRoute(["airport_jfk", "airport_lhr", "airport_jfk"]).stops.map(
+        ({ role }) => role,
+      ),
+    ).toEqual(["origin", "transit", "destination"]);
+  });
 });

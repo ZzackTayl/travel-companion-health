@@ -5,6 +5,19 @@ import type {
   RouteRole,
 } from "@/lib/domain";
 
+export class RouteResolutionError extends Error {
+  readonly code: "ADJACENT_DUPLICATE_STOP" | "UNKNOWN_AIRPORT_ID";
+
+  constructor(
+    code: "ADJACENT_DUPLICATE_STOP" | "UNKNOWN_AIRPORT_ID",
+    message: string,
+  ) {
+    super(message);
+    this.name = "RouteResolutionError";
+    this.code = code;
+  }
+}
+
 function roleAt(position: number, stopCount: number): RouteRole {
   if (position === 0) return "origin";
   if (position === stopCount - 1) return "destination";
@@ -46,6 +59,16 @@ function mergeJurisdiction(
 }
 
 export function resolveRoute(routeStopIds: string[]): ResolvedRoute {
+  const duplicatePosition = routeStopIds.findIndex(
+    (id, position) => position > 0 && routeStopIds[position - 1] === id,
+  );
+  if (duplicatePosition >= 0) {
+    throw new RouteResolutionError(
+      "ADJACENT_DUPLICATE_STOP",
+      "Adjacent route stops must be different airports",
+    );
+  }
+
   const unknownIds: string[] = [];
   const stops = routeStopIds.flatMap((id, position) => {
     const airport = findAirportById(id);
@@ -59,7 +82,10 @@ export function resolveRoute(routeStopIds: string[]): ResolvedRoute {
   });
 
   if (unknownIds.length > 0) {
-    throw new Error(`Unknown airport IDs: ${unknownIds.join(", ")}`);
+    throw new RouteResolutionError(
+      "UNKNOWN_AIRPORT_ID",
+      `Unknown airport IDs: ${unknownIds.join(", ")}`,
+    );
   }
 
   const countries = new Map<string, ResolvedJurisdiction>();

@@ -40,6 +40,14 @@ function scoreAirport(airport: Airport, rawQuery: string) {
 }
 
 export function searchAirports(query: string, limit = 8) {
+  const normalizedQuery = normalize(query);
+  if (/^[a-z]{3}$/.test(normalizedQuery)) {
+    const exactMatch = airports.find(
+      ({ iataCode }) => normalize(iataCode) === normalizedQuery,
+    );
+    return exactMatch ? [exactMatch] : [];
+  }
+
   return airports
     .map((airport) => ({ airport, score: scoreAirport(airport, query) }))
     .filter(({ score }) => score > 0)

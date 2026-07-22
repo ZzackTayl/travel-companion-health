@@ -1,4 +1,5 @@
 import { searchAirports } from "@/lib/airports";
+import { jsonNoStore } from "@/lib/http";
 import { airportSearchSchema, validationError } from "@/lib/validation";
 
 export function GET(request: Request) {
@@ -11,8 +12,7 @@ export function GET(request: Request) {
   if (!parsed.success) return validationError(parsed.error);
 
   const results = searchAirports(parsed.data.q, parsed.data.limit);
-  return Response.json({
-    query: parsed.data.q,
+  return jsonNoStore({
     count: results.length,
     results,
   });
