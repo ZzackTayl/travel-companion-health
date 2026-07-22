@@ -47,4 +47,24 @@ describe("POST /api/routes/resolve", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("rejects unsupported media types and oversized bodies", async () => {
+    const unsupported = await POST(
+      new Request("http://localhost/api/routes/resolve", {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: "{}",
+      }),
+    );
+    const oversized = await POST(
+      new Request("http://localhost/api/routes/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ padding: "x".repeat(17 * 1024) }),
+      }),
+    );
+
+    expect(unsupported.status).toBe(415);
+    expect(oversized.status).toBe(413);
+  });
 });

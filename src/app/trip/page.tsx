@@ -19,9 +19,8 @@ export default function TripPage() {
             Resolve every stop before you travel with medicine.
           </h1>
           <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">
-            Search the server airport catalog, include layovers, and get
-            reviewed, source-backed preparation guidance for each jurisdiction
-            on your route.
+            Search the server airport catalog, include layovers, and get reviewed,
+            source-backed preparation guidance for each jurisdiction on your route.
           </p>
         </div>
         <TripPlanner />
